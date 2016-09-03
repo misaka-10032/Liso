@@ -1,0 +1,7 @@
+.*
+!.gitignore
+
+tags
+build
+client
+lisod

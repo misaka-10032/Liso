@@ -1,20 +1,56 @@
 ################################################################################
 # Makefile                                                                     #
 #                                                                              #
-# Description: This file contains the make rules for Recitation 1.             #
+# Description: This file contains the make rules for server and client.        #
 #                                                                              #
-# Authors: Athula Balachandran <abalacha@cs.cmu.edu>,                          #
-#          Wolf Richter <wolf@cs.cmu.edu>                                      #
+# Author: Longqi Cai <longqic@andrew.cmu.edu>                                  #
 #                                                                              #
 ################################################################################
 
-default: echo_server echo_client
+CC := gcc
+CFLAGS := -Wall -Werror
+CFLAGS += -g
 
-echo_server:
-	@gcc echo_server.c -o echo_server -Wall -Werror
+BUILD := build
+SRV := lisod
+CLI := client
+SRCS := $(shell find . -name "*.c")
+OBJS := $(patsubst %.c,$(BUILD)/%.o,$(SRCS))
+SRV_OBJS := $(filter-out $(BUILD)/./$(CLI).o,$(OBJS))
+CLI_OBJS := $(filter-out $(BUILD)/./$(SRV).o,$(OBJS))
 
-echo_client:
-	@gcc echo_client.c -o echo_client -Wall -Werror
+RUN := run
+
+all: $(SRV) $(CLI)
+
+pre:
+	@mkdir -p $(BUILD) $(RUN)
+
+tag:
+	@ctags -R --exclude=.git --exclude=$(BUILD) --exclude=$(RUN) \
+		--languages=C
+
+$(SRV): pre $(SRV_OBJS)
+	@echo $(SRV) $(SRV_OBJS)
+	$(CC) $(CFLAGS) -o $@ $(SRV_OBJS)
+
+$(CLI): pre $(CLI_OBJS)
+	@echo $(CLI) $(CLI_OBJS)
+	$(CC) $(CFLAGS) -o $@ $(CLI_OBJS)
+
+$(BUILD)/%.o: %.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+%.c: %.h
+
+run: all
+	./$(SRV) 10032 443 $(RUN)/log $(RUN)/lock $(RUN)/www \
+		$(RUN)/cgi $(RUN)/prv $(RUN)/cert
+
+echo: all
+	./$(CLI) localhost 10032
 
 clean:
-	@rm echo_server echo_client
+	@rm -rf $(BUILD) $(RUN) $(SRV) $(CLI) tags
+
+.PHONY: pre tag all clean run
