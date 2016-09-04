@@ -12,6 +12,7 @@
 
 #include <netinet/in.h>
 #include <netinet/ip.h>
+#include <signal.h>
 #include <sys/select.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +24,9 @@
 #include "utils.h"
 
 int close_socket(int sock) {
+#ifdef DEBUG
+  printf("[close_socket] %d\n", sock);
+#endif
   if (close(sock)) {
     fprintf(stderr, "Failed closing socket.\n");
     return 1;
@@ -30,7 +34,15 @@ int close_socket(int sock) {
   return 0;
 }
 
+void cleanup(pool_t* pool, conn_t* conn) {
+  close_socket(conn->fd);
+  if (pl_del_conn(pool, conn) < 0) {
+    fprintf(stderr, "Error deleting connection.\n");
+  }
+}
+
 int main(int argc, char* argv[]) {
+  sigset_t mask, old_mask;
   int sock, client_sock;
   socklen_t cli_size;
   struct sockaddr_in addr, cli_addr;
@@ -62,6 +74,12 @@ int main(int argc, char* argv[]) {
   cgi_path = argv[6];
   prvkey_file = argv[7];
   cert_file = argv[8];
+
+  // avoid crash when client continues to send after sock is closed.
+  sigemptyset(&mask);
+  sigemptyset(&old_mask);
+  sigaddset(&mask, SIGPIPE);
+  sigprocmask(SIG_BLOCK, &mask, &old_mask);
 
   fprintf(stdout, "----- Liso Server -----\n");
   /* all networked programs must create a socket */
@@ -97,22 +115,34 @@ int main(int argc, char* argv[]) {
                                 NULL, NULL)) == -1) {
       close(sock);
       fprintf(stderr, "Error in select.\n");
-      return EXIT_FAILURE;
+      continue;
     }
+#if DEBUG >= 2
+    printf("[select] n_ready=%zu\n", pool->n_ready);
+#endif
 
     /*** new connection ***/
     if (FD_ISSET(sock, &pool->read_ready)) {
       cli_size = sizeof(cli_addr);
       if ((client_sock = accept(sock, (struct sockaddr *) &cli_addr,
                                 &cli_size)) == -1) {
-        close(sock);
         fprintf(stderr, "Error accepting connection.\n");
-        return EXIT_FAILURE;
+        continue;
+      }
+
+      if (pool->n_conns == MAX_CONNS) {
+        fprintf(stderr, "Max conns reached; drop client %d.\n", client_sock);
+        close_socket(client_sock);
+        continue;
       }
 
       pool->max_fd = max(pool->max_fd, client_sock);
       conn_t* conn = cn_new(client_sock, pool->n_conns);
-      pl_add_conn(pool, conn);
+
+      if (pl_add_conn(pool, conn) < 0) {
+        fprintf(stderr, "Error adding connection.\n");
+        continue;
+      }
     }
 
     for (i = 0; i < pool->n_conns; i++) {
@@ -122,28 +152,27 @@ int main(int argc, char* argv[]) {
         continue;
       buf->sz = recv(conn->fd, buf->data, BUFSZ, 0);
       if (buf->sz < 0) {
-        close_socket(conn->fd);
-        close_socket(sock);
+        cleanup(pool, conn);
         fprintf(stderr, "Error receiving from client.\n");
-        return EXIT_FAILURE;
+        continue;
       }
       if (buf->sz > 0) {
-#ifdef DEBUG
+#if DEBUG >= 2
         printf("[recv] from %d\n", conn->fd);
         fwrite(buf->data, buf->sz, 1, stdout);
         printf("\n");
 #endif
         if ((send(conn->fd, buf->data, buf->sz, 0) != buf->sz)) {
-          close_socket(conn->fd);
-          close_socket(sock);
+          cleanup(pool, conn);
           fprintf(stderr, "Error sending to client.\n");
-          return EXIT_FAILURE;
+          continue;
         }
       } else if (buf->sz == 0) {
 #ifdef DEBUG
         printf("[recv end] from %d\n", conn->fd);
 #endif
-        pl_del_conn(pool, conn);
+        cleanup(pool, conn);
+        continue;
       }
     }
   }

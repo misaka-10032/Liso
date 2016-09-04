@@ -1,24 +1,17 @@
 /******************************************************************************
-* io.h                                                                        *
+* errors.h                                                                    *
 *                                                                             *
-* Description: IO related functions.                                          *
+* Description: TODO                                                           *
 *                                                                             *
 * Author(s):   Longqi Cai (longqic@andrew.cmu.edu)                            *
 *                                                                             *
 *******************************************************************************/
 
-#ifndef IO_H
-#define IO_H
+#ifndef ERRORS_H
+#define ERRORS_H
 
-#include <sys/types.h>
+#include "utils.h"
 
-#define BUFSZ 4096
+void err_resp(int no, int fd);
 
-typedef struct {
-  ssize_t sz;
-  void* data;
-} buf_t;
-
-buf_t* bf_new();
-
-#endif // IO_H
+#endif // ERRORS_H

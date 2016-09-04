@@ -27,7 +27,7 @@ void cn_free(conn_t* conn) {
 pool_t* pl_new(int sock) {
   pool_t* p = malloc(sizeof(pool_t));
   p->n_conns = 0;
-  p->conns = malloc(sizeof(conn_t) * MAX_EVTS);
+  p->conns = malloc(sizeof(conn_t) * MAX_CONNS);
 
   p->max_fd = sock;
   FD_ZERO(&p->read_set);
@@ -48,23 +48,34 @@ void pl_free(pool_t* p) {
   free(p);
 }
 
-void pl_add_conn(pool_t* p, conn_t* c) {
-  // TODO: more than n_conns
+int pl_add_conn(pool_t* p, conn_t* c) {
+  if (p->n_conns >= MAX_CONNS)
+    return -1;
   FD_SET(c->fd, &p->read_set);
   c->idx = p->n_conns;
   p->conns[p->n_conns++] = c;
 #ifdef DEBUG
   printf("[pl_add_conn] fd=%d, poolsz=%zu.\n", c->fd, p->n_conns);
 #endif
+  return 1;
 }
 
-void pl_del_conn(pool_t* p, conn_t* c) {
-  // TODO: non exist
+int pl_del_conn(pool_t* p, conn_t* c) {
+  if (c->idx >= p->n_conns) {
+#ifdef DEBUG
+    printf("[pl_del_conn] c->idx=%d, p->n_conns=%zu.\n",
+           c->idx, p->n_conns);
+#endif
+    return -1;
+  }
   FD_CLR(c->fd, &p->read_set);
   p->conns[c->idx] = p->conns[--p->n_conns];
+  p->conns[c->idx]->idx = c->idx;
   p->conns[p->n_conns] = NULL;
-  cn_free(c);
 #ifdef DEBUG
-  printf("[pl_del_conn] fd=%d, poolsz=%zu.\n", c->fd, p->n_conns);
+  printf("[pl_del_conn] fd=%d, idx=%d, poolsz=%zu.\n",
+         c->fd, c->idx, p->n_conns);
 #endif
+  cn_free(c);
+  return 1;
 }

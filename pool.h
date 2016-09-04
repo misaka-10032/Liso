@@ -13,8 +13,7 @@
 #include <sys/select.h>
 #include "io.h"
 
-#define MAX_CONN 128
-#define MAX_EVTS 256
+#define MAX_CONNS (FD_SETSIZE - 10)
 
 typedef struct {
   int fd;
@@ -42,7 +41,7 @@ pool_t* pl_new(int sock);
 void pl_free(pool_t* p);
 void pl_ready(pool_t* p);
 
-void pl_add_conn(pool_t* p, conn_t* c);
-void pl_del_conn(pool_t* p, conn_t* c);
+int pl_add_conn(pool_t* p, conn_t* c);
+int pl_del_conn(pool_t* p, conn_t* c);
 
 #endif // POOL_H

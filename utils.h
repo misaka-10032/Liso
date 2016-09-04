@@ -12,6 +12,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define DEBUG 1
 
@@ -21,5 +22,7 @@
 #ifndef min
   #define min(a, b) ((a) < (b) ? (a) : (b))
 #endif
+
+#define CRLF "\r\n"
 
 #endif // UTILS_H

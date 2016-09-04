@@ -47,10 +47,21 @@ run: all
 	./$(SRV) 10032 443 $(RUN)/log $(RUN)/lock $(RUN)/www \
 		$(RUN)/cgi $(RUN)/prv $(RUN)/cert
 
+valgrind: all
+	valgrind ./$(SRV) 10032 443 $(RUN)/log $(RUN)/lock $(RUN)/www \
+		$(RUN)/cgi $(RUN)/prv $(RUN)/cert
+
+
 echo: all
 	./$(CLI) localhost 10032
 
-clean:
-	@rm -rf $(BUILD) $(RUN) $(SRV) $(CLI) tags
+handin: all clean
+	cd .. && tar cvf longqic.tar 15-441-project-1 && cd -
 
-.PHONY: pre tag all clean run
+test1: all
+	test/test1.sh
+
+clean:
+	@rm -rf $(BUILD) $(RUN) $(SRV) $(CLI) tags *.dSYM
+
+.PHONY: pre tag all clean run test*
