@@ -14,6 +14,7 @@
 #include <netinet/ip.h>
 #include <signal.h>
 #include <sys/select.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,7 +29,7 @@ int close_socket(int sock) {
   printf("[close_socket] %d\n", sock);
 #endif
   if (close(sock)) {
-    fprintf(stderr, "Failed closing socket.\n");
+    fprintf(stderr, "Failed closing socket %d.\n", sock);
     return 1;
   }
   return 0;
@@ -126,7 +127,8 @@ int main(int argc, char* argv[]) {
       cli_size = sizeof(cli_addr);
       if ((client_sock = accept(sock, (struct sockaddr *) &cli_addr,
                                 &cli_size)) == -1) {
-        fprintf(stderr, "Error accepting connection.\n");
+        fprintf(stderr, "Error in accept: %s\n", strerror(errno));
+        errno = 0;
         continue;
       }
 
@@ -153,7 +155,8 @@ int main(int argc, char* argv[]) {
       buf->sz = recv(conn->fd, buf->data, BUFSZ, 0);
       if (buf->sz < 0) {
         cleanup(pool, conn);
-        fprintf(stderr, "Error receiving from client.\n");
+        fprintf(stderr, "Error in recv: %s\n", strerror(errno));
+        errno = 0;
         continue;
       }
       if (buf->sz > 0) {
@@ -164,7 +167,8 @@ int main(int argc, char* argv[]) {
 #endif
         if ((send(conn->fd, buf->data, buf->sz, 0) != buf->sz)) {
           cleanup(pool, conn);
-          fprintf(stderr, "Error sending to client.\n");
+          fprintf(stderr, "Error in send: %s\n", strerror(errno));
+          errno = 0;
           continue;
         }
       } else if (buf->sz == 0) {

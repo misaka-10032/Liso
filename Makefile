@@ -59,7 +59,8 @@ handin: all clean
 	cd .. && tar cvf longqic.tar 15-441-project-1 && cd -
 
 sync: all clean
-	cd .. && rsync -av 15-441-project-1 cmu-latedays:~/15-641/
+	#cd .. && rsync -av 15-441-project-1 cmu-latedays:~/15-641/
+	cd .. && rsync -av 15-441-project-1 cmu:~/15-641/
 
 test1: all
 	test/test1.sh

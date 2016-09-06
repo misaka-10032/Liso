@@ -6,6 +6,9 @@ import random
 import os
 import time
 
+import resource
+resource.setrlimit(resource.RLIMIT_NOFILE, (3000, 3000))
+
 if len(sys.argv) < 7:
     sys.stderr.write('Usage: %s <ip> <port> <#trials>\
             <#writes and reads per trial>\
