@@ -51,13 +51,13 @@ int main(int argc, char* argv[]) {
 
   const int ARG_CNT = 8;
   int http_port;
-  int https_port;
-  char* log_file;
-  char* lock_file;
-  char* www_folder;
-  char* cgi_path;
-  char* prvkey_file;
-  char* cert_file;
+//  int https_port;
+//  char* log_file;
+//  char* lock_file;
+//  char* www_folder;
+//  char* cgi_path;
+//  char* prvkey_file;
+//  char* cert_file;
 
   if (argc != ARG_CNT+1) {
     fprintf(stdout, "Usage: %s <HTTP port> <HTTPS port> <log file>"
@@ -67,13 +67,13 @@ int main(int argc, char* argv[]) {
   }
 
   http_port = atoi(argv[1]);
-  https_port = atoi(argv[2]);
-  log_file = argv[3];
-  lock_file = argv[4];
-  www_folder = argv[5];
-  cgi_path = argv[6];
-  prvkey_file = argv[7];
-  cert_file = argv[8];
+//  https_port = atoi(argv[2]);
+//  log_file = argv[3];
+//  lock_file = argv[4];
+//  www_folder = argv[5];
+//  cgi_path = argv[6];
+//  prvkey_file = argv[7];
+//  cert_file = argv[8];
 
   // avoid crash when client continues to send after sock is closed.
   sigemptyset(&mask);
