@@ -9,7 +9,7 @@
 
 CC := gcc
 CFLAGS := -Wall -Werror
-CFLAGS += -g
+CFLAGS += -O3
 
 BUILD := build
 SRV := lisod

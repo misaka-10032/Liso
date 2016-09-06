@@ -12,7 +12,7 @@
 
 #include <sys/types.h>
 
-#define BUFSZ 4096
+#define BUFSZ 8192
 
 typedef struct {
   ssize_t sz;
