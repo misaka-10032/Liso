@@ -35,7 +35,7 @@ void err_resp(int no, int fd) {
     msg = err503;
     break;
   default:
-#ifdef DEBUG
+#if DEBUG >= 1
     fprintf(stderr, "Error(%d) undefined.\n", no);
 #endif
     break;

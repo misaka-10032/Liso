@@ -25,7 +25,7 @@
 #include "utils.h"
 
 int close_socket(int sock) {
-#ifdef DEBUG
+#if DEBUG >= 1
   printf("[close_socket] %d\n", sock);
 #endif
   if (close(sock)) {
@@ -172,7 +172,7 @@ int main(int argc, char* argv[]) {
           continue;
         }
       } else if (buf->sz == 0) {
-#ifdef DEBUG
+#if DEBUG >= 1
         printf("[recv end] from %d\n", conn->fd);
 #endif
         cleanup(pool, conn);

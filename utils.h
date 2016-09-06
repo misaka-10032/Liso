@@ -14,7 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DEBUG 1
+#define DEBUG 0
 
 #ifndef max
   #define max(a, b) ((a) > (b) ? (a) : (b))

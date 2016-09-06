@@ -54,7 +54,7 @@ int pl_add_conn(pool_t* p, conn_t* c) {
   FD_SET(c->fd, &p->read_set);
   c->idx = p->n_conns;
   p->conns[p->n_conns++] = c;
-#ifdef DEBUG
+#if DEBUG >= 1
   printf("[pl_add_conn] fd=%d, poolsz=%zu.\n", c->fd, p->n_conns);
 #endif
   return 1;
@@ -62,7 +62,7 @@ int pl_add_conn(pool_t* p, conn_t* c) {
 
 int pl_del_conn(pool_t* p, conn_t* c) {
   if (c->idx >= p->n_conns) {
-#ifdef DEBUG
+#if DEBUG >= 1
     printf("[pl_del_conn] c->idx=%d, p->n_conns=%zu.\n",
            c->idx, p->n_conns);
 #endif
@@ -72,7 +72,7 @@ int pl_del_conn(pool_t* p, conn_t* c) {
   p->conns[c->idx] = p->conns[--p->n_conns];
   p->conns[c->idx]->idx = c->idx;
   p->conns[p->n_conns] = NULL;
-#ifdef DEBUG
+#if DEBUG >= 1
   printf("[pl_del_conn] fd=%d, idx=%d, poolsz=%zu.\n",
          c->fd, c->idx, p->n_conns);
 #endif
