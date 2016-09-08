@@ -1,13 +1,11 @@
-/******************************************************************************
-* pool.c                                                                      *
-*                                                                             *
-* Description: Implementation of pool                                         *
-*                                                                             *
-* Author(s):   Longqi Cai (longqic@andrew.cmu.edu)                            *
-*                                                                             *
-*******************************************************************************/
+/**
+ * @file pool.c
+ * @brief Implementation of pool.h
+ * @author Longqi Cai <longqic@andrew.cmu.edu>
+ */
 
 #include "pool.h"
+#include "log.h"
 #include "utils.h"
 
 conn_t* cn_new(int fd, int idx) {
@@ -55,7 +53,7 @@ int pl_add_conn(pool_t* p, conn_t* c) {
   c->idx = p->n_conns;
   p->conns[p->n_conns++] = c;
 #if DEBUG >= 1
-  printf("[pl_add_conn] fd=%d, poolsz=%zu.\n", c->fd, p->n_conns);
+  log_line("[pl_add_conn] fd=%d, poolsz=%zu.", c->fd, p->n_conns);
 #endif
   return 1;
 }
@@ -63,8 +61,8 @@ int pl_add_conn(pool_t* p, conn_t* c) {
 int pl_del_conn(pool_t* p, conn_t* c) {
   if (c->idx >= p->n_conns) {
 #if DEBUG >= 1
-    printf("[pl_del_conn] c->idx=%d, p->n_conns=%zu.\n",
-           c->idx, p->n_conns);
+    log_line("[pl_del_conn] c->idx=%d, p->n_conns=%zu.",
+             c->idx, p->n_conns);
 #endif
     return -1;
   }
@@ -73,8 +71,8 @@ int pl_del_conn(pool_t* p, conn_t* c) {
   p->conns[c->idx]->idx = c->idx;
   p->conns[p->n_conns] = NULL;
 #if DEBUG >= 1
-  printf("[pl_del_conn] fd=%d, idx=%d, poolsz=%zu.\n",
-         c->fd, c->idx, p->n_conns);
+  log_line("[pl_del_conn] fd=%d, idx=%d, poolsz=%zu.",
+           c->fd, c->idx, p->n_conns);
 #endif
   cn_free(c);
   return 1;

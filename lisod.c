@@ -1,14 +1,11 @@
-/******************************************************************************
-* lisod.c                                                                     *
-*                                                                             *
-* Description: This file contains the C source code for an echo server.  The  *
-*              server runs on a hard-coded port and simply write back anything*
-*              sent to it by connected clients.  It does not support          *
-*              concurrent clients.                                            *
-*                                                                             *
-* Author(s):   Longqi Cai <longqic@andrew.cmu.edu>                            *
-*                                                                             *
-*******************************************************************************/
+/**
+ * @file lisod.c
+ * @brief Entry for the Liso server.
+ * @author Longqi Cai <longqic@andrew.cmu.edu>
+ *
+ * TODO This is a select-based server.
+ *
+ */
 
 #include <netinet/in.h>
 #include <netinet/ip.h>
@@ -22,11 +19,15 @@
 #include <unistd.h>
 #include "pool.h"
 #include "io.h"
+#include "log.h"
 #include "utils.h"
+
+// global listener socket
+static int sock;
 
 int close_socket(int sock) {
 #if DEBUG >= 1
-  printf("[close_socket] %d\n", sock);
+  log_line("[close_socket] %d", sock);
 #endif
   if (close(sock)) {
     fprintf(stderr, "Failed closing socket %d.\n", sock);
@@ -35,6 +36,7 @@ int close_socket(int sock) {
   return 0;
 }
 
+// clean up the connection
 void cleanup(pool_t* pool, conn_t* conn) {
   close_socket(conn->fd);
   if (pl_del_conn(pool, conn) < 0) {
@@ -42,9 +44,24 @@ void cleanup(pool_t* pool, conn_t* conn) {
   }
 }
 
+void teardown() {
+  close_socket(sock);
+  log_line("-------- Liso Server stops --------");
+  log_stop();
+  exit(EXIT_SUCCESS);
+}
+
+void signal_handler(int sig) {
+  switch (sig) {
+    case SIGINT:
+    case SIGTERM:
+      teardown();
+      break;
+  }
+}
+
 int main(int argc, char* argv[]) {
-  sigset_t mask, old_mask;
-  int sock, client_sock;
+  int client_sock;
   socklen_t cli_size;
   struct sockaddr_in addr, cli_addr;
   pool_t* pool;
@@ -53,7 +70,7 @@ int main(int argc, char* argv[]) {
   const int ARG_CNT = 8;
   int http_port;
 //  int https_port;
-//  char* log_file;
+  char* log_file;
 //  char* lock_file;
 //  char* www_folder;
 //  char* cgi_path;
@@ -69,20 +86,25 @@ int main(int argc, char* argv[]) {
 
   http_port = atoi(argv[1]);
 //  https_port = atoi(argv[2]);
-//  log_file = argv[3];
+  log_file = argv[3];
 //  lock_file = argv[4];
 //  www_folder = argv[5];
 //  cgi_path = argv[6];
 //  prvkey_file = argv[7];
 //  cert_file = argv[8];
 
+  /* setup signals */
   // avoid crash when client continues to send after sock is closed.
-  sigemptyset(&mask);
-  sigemptyset(&old_mask);
-  sigaddset(&mask, SIGPIPE);
-  sigprocmask(SIG_BLOCK, &mask, &old_mask);
+  signal(SIGPIPE, SIG_IGN);
+  // cgi shouldn't crash lisod.
+  signal(SIGCHLD, SIG_IGN);
+  signal(SIGTERM, signal_handler);
+  signal(SIGINT, signal_handler);
 
-  fprintf(stdout, "----- Liso Server -----\n");
+  /* setup log */
+  log_init(log_file);
+
+  log_line("-------- Liso Server starts --------");
   /* all networked programs must create a socket */
   if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == -1) {
     fprintf(stderr, "Failed creating socket.\n");
@@ -119,7 +141,7 @@ int main(int argc, char* argv[]) {
       continue;
     }
 #if DEBUG >= 2
-    printf("[select] n_ready=%zu\n", pool->n_ready);
+    log_line("[select] n_ready=%zu", pool->n_ready);
 #endif
 
     /*** new connection ***/
@@ -161,9 +183,7 @@ int main(int argc, char* argv[]) {
       }
       if (buf->sz > 0) {
 #if DEBUG >= 2
-        printf("[recv] from %d\n", conn->fd);
-        fwrite(buf->data, buf->sz, 1, stdout);
-        printf("\n");
+        log_line("[recv] from %d", conn->fd);
 #endif
         if ((send(conn->fd, buf->data, buf->sz, 0) != buf->sz)) {
           cleanup(pool, conn);
@@ -173,7 +193,7 @@ int main(int argc, char* argv[]) {
         }
       } else if (buf->sz == 0) {
 #if DEBUG >= 1
-        printf("[recv end] from %d\n", conn->fd);
+        log_line("[recv end] from %d", conn->fd);
 #endif
         cleanup(pool, conn);
         continue;

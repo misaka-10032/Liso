@@ -1,0 +1,26 @@
+set cc=81  " color bar warning
+
+autocmd BufNewFile *.h exec ":call AutoHeader()"
+func! AutoHeader()
+    call append(0, "/**")
+    let fname = expand("%:t")
+    call append(1, " * @file ".fname)
+    call append(2, " * @brief TODO")
+    call append(3, " * @author Longqi Cai <longqic@andrew.cmu.edu>")
+    call append(4, " */")
+    call append(5, "")
+    normal G
+endfunc
+
+autocmd BufNewFile *.c exec ":call AutoSrc()"
+func! AutoSrc()
+    call append(0, "/**")
+    let fname = expand("%:t")
+    let name = expand("%:t:r")
+    call append(1, " * @file ".fname)
+    call append(2, " * @brief Implementation of ".name.".h")
+    call append(3, " * @author Longqi Cai <longqic@andrew.cmu.edu>")
+    call append(4, " */")
+    call append(5, "")
+    normal G
+endfunc

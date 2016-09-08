@@ -1,7 +1,9 @@
 .*
 !.gitignore
+!.vimrc.local
 
 tags
 build
+run
 client
 lisod

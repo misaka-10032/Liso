@@ -1,11 +1,8 @@
-/******************************************************************************
-* errors.c                                                                    *
-*                                                                             *
-* Description: Implementation of errors                                       *
-*                                                                             *
-* Author(s):   Longqi Cai (longqic@andrew.cmu.edu)                            *
-*                                                                             *
-*******************************************************************************/
+/**
+ * @file errors.c
+ * @brief Implementation of errors.h
+ * @author Longqi Cai <longqic@andrew.cmu.edu>
+ */
 
 #include <sys/socket.h>
 #include "errors.h"

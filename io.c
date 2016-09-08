@@ -1,11 +1,8 @@
-/******************************************************************************
-* io.c                                                                        *
-*                                                                             *
-* Description: Implementation of io                                           *
-*                                                                             *
-* Author(s):   Longqi Cai (longqic@andrew.cmu.edu)                            *
-*                                                                             *
-*******************************************************************************/
+/**
+ * @file io.c
+ * @brief Implementation of io.h
+ * @author Longqi Cai <longqic@andrew.cmu.edu>
+ */
 
 #include <stdlib.h>
 #include "io.h"

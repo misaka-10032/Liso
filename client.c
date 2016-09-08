@@ -1,13 +1,8 @@
-/******************************************************************************
-* client.c                                                                    *
-*                                                                             *
-* Description: This file contains the C source code for an echo client.  The  *
-*              client connects to an arbitrary <host,port> and sends input    *
-*              from stdin.                                                    *
-*                                                                             *
-* Author(s):   Longqi Cai <longqic@andrew.cmu.edu>                            *
-*                                                                             *
-*******************************************************************************/
+/**
+ * @file client.c
+ * @brief Simple echo client for testing.
+ * @author Longqi Cai <longqic@andrew.cmu.edu>
+ */
 
 #include <stdio.h>
 #include <stdlib.h>
