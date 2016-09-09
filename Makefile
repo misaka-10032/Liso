@@ -9,19 +9,23 @@
 
 CC := gcc
 CFLAGS := -Wall -Werror
-CFLAGS += -O3
+CFLAGS += -g
 
 BUILD := build
 SRV := lisod
 CLI := client
+TEST := test_driver
+MAIN_SRCS := ./$(SRV).c ./$(CLI).c ./$(TEST).c
 SRCS := $(shell find . -name "*.c")
-OBJS := $(patsubst %.c,$(BUILD)/%.o,$(SRCS))
-SRV_OBJS := $(filter-out $(BUILD)/./$(CLI).o,$(OBJS))
-CLI_OBJS := $(filter-out $(BUILD)/./$(SRV).o,$(OBJS))
+DEP_SRCS := $(filter-out $(MAIN_SRCS),$(SRCS))
+DEP_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(DEP_SRCS))
+SRV_OBJS := $(BUILD)/$(SRV).o $(DEP_OBJS)
+CLI_OBJS := $(BUILD)/$(CLI).o $(DEP_OBJS)
+TEST_OBJS := $(BUILD)/$(TEST).o $(DEP_OBJS)
 
 RUN := run
 
-all: $(SRV) $(CLI)
+all: $(SRV) $(CLI) $(TEST)
 
 pre:
 	@mkdir -p $(BUILD) $(RUN)
@@ -37,6 +41,9 @@ $(SRV): pre $(SRV_OBJS)
 $(CLI): pre $(CLI_OBJS)
 	@echo $(CLI) $(CLI_OBJS)
 	$(CC) $(CFLAGS) -o $@ $(CLI_OBJS)
+
+$(TEST): pre $(TEST_OBJS)
+	$(CC) $(CFLAGS) -o $@ $(TEST_OBJS)
 
 $(BUILD)/%.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -59,11 +66,15 @@ handin: all clean
 	cd .. && tar cvf longqic.tar 15-441-project-1 && cd -
 
 sync: all clean
-	#cd .. && rsync -av 15-441-project-1 cmu-latedays:~/15-641/
 	cd .. && rsync -av 15-441-project-1 cmu:~/15-641/
+
+test0: all
+	./$(TEST)
 
 test1: all
 	test/test1.sh
+
+test: test0 test1
 
 clean:
 	@rm -rf $(BUILD) $(RUN) $(SRV) $(CLI) tags *.dSYM

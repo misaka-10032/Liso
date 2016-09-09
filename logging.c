@@ -1,5 +1,5 @@
 /**
- * @file log.c
+ * @file logging.c
  * @brief Implementation of log.h
  * @author Longqi Cai <longqic@andrew.cmu.edu>
  */
@@ -12,7 +12,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <time.h>
-#include "log.h"
+#include "logging.h"
 
 // file descriptor for the log
 static int fd;

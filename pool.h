@@ -6,23 +6,28 @@
  * This module manages a pool of connections. It allocates or deallocates
  * buffers, and manages connection in a list, but do NOT open or close
  * sockets.
- *
- * TODO
  */
 
 #ifndef POOL_H
 #define POOL_H
 
 #include <sys/select.h>
+#include "request.h"
 #include "io.h"
 
 #define MAX_CONNS (FD_SETSIZE - 10)
 
+/* conn_t */
 typedef struct {
   // File desriptor for the client socket
   int fd;
   // Idx in the pool
   int idx;
+  // Number of bytes remained in this connection
+  // -1 if aborted.
+  ssize_t remained;
+  // Parsed request header
+  req_t* req;
   // Buffer for the connection
   buf_t* buf;
 } conn_t;
@@ -34,7 +39,7 @@ conn_t* cn_new(int fd, int idx);
 // Free a connection
 void cn_free(conn_t* conn);
 
-
+/* pool_t */
 typedef struct {
   // list of connections
   size_t n_conns;

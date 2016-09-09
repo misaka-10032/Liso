@@ -7,13 +7,19 @@
 #include <stdlib.h>
 #include "io.h"
 
-buf_t* bf_new() {
+buf_t* buf_new() {
   buf_t* buf = malloc(sizeof(buf_t));
-  buf->data = malloc(BUFSZ);
+  buf->sz = 0;
+  buf->data = malloc(BUFSZ+1);
+  buf->data_p = buf->data;
   return buf;
 }
 
-void bf_free(buf_t* buf) {
+void buf_free(buf_t* buf) {
   free(buf->data);
   free(buf);
+}
+
+void* buf_end(buf_t* buf) {
+  return buf->data + buf->sz;
 }

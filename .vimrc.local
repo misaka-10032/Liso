@@ -22,5 +22,7 @@ func! AutoSrc()
     call append(3, " * @author Longqi Cai <longqic@andrew.cmu.edu>")
     call append(4, " */")
     call append(5, "")
+    call append(6, "#include \"".name.".h\"")
+    call append(7, "")
     normal G
 endfunc

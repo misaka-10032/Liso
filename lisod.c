@@ -18,8 +18,10 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include "pool.h"
+#include "request.h"
+#include "response.h"
+#include "logging.h"
 #include "io.h"
-#include "log.h"
 #include "utils.h"
 
 // global listener socket
@@ -174,6 +176,7 @@ int main(int argc, char* argv[]) {
       buf_t* buf = conn->buf;
       if (!FD_ISSET(conn->fd, &pool->read_ready))
         continue;
+      buf->data_p = buf->data;
       buf->sz = recv(conn->fd, buf->data, BUFSZ, 0);
       if (buf->sz < 0) {
         cleanup(pool, conn);
@@ -182,15 +185,50 @@ int main(int argc, char* argv[]) {
         continue;
       }
       if (buf->sz > 0) {
-#if DEBUG >= 2
+#if DEBUG >= 3
         log_line("[recv] from %d", conn->fd);
 #endif
-        if ((send(conn->fd, buf->data, buf->sz, 0) != buf->sz)) {
+        ssize_t rc;
+#if DEBUG >= 1
+        log_line("[main loop] parse req for %d", conn->fd);
+#endif
+        rc = req_parse(conn->req, buf);
+
+        // handle bad header
+        if (rc < 0) {
+          if (rc == -1) {
+            resp_err(501, conn->fd);
+          } else {
+            resp_err(400, conn->fd);
+          }
           cleanup(pool, conn);
-          fprintf(stderr, "Error in send: %s\n", strerror(errno));
-          errno = 0;
           continue;
         }
+
+        if (conn->req->phase == BODY) {
+          // TODO: stream body
+          ssize_t size = buf_end(conn->buf) - conn->buf->data_p;
+          conn->req->rsize -= size;
+          if (conn->req->rsize <= 0) {
+            conn->req->phase = DONE;
+          }
+        }
+
+        if (conn->req->phase == DONE) {
+          // TODO: ???
+          buf_t* dump = buf_new();
+          req_pack(conn->req, dump);
+#if DEBUG >= 2
+          log_line("[main loop] parsed req\n%s", dump->data);
+#endif
+          if ((send(conn->fd, dump->data, dump->sz, 0) != dump->sz)) {
+            fprintf(stderr, "Error in send: %s\n", strerror(errno));
+            errno = 0;
+          }
+          buf_free(dump);
+          cleanup(pool, conn);
+        }
+
       } else if (buf->sz == 0) {
 #if DEBUG >= 1
         log_line("[recv end] from %d", conn->fd);

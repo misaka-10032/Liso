@@ -5,22 +5,25 @@
  */
 
 #include "pool.h"
-#include "log.h"
+#include "io.h"
+#include "logging.h"
 #include "utils.h"
 
 conn_t* cn_new(int fd, int idx) {
   conn_t* conn = malloc(sizeof(conn_t));
   conn->fd = fd;
   conn->idx = idx;
-  conn->buf = bf_new();
+  conn->remained = BUFSZ;
+  conn->req = req_new();
+  conn->buf = buf_new();
   return conn;
 }
 
 void cn_free(conn_t* conn) {
-  free(conn->buf);
+  req_free(conn->req);
+  buf_free(conn->buf);
   free(conn);
 }
-
 
 pool_t* pl_new(int sock) {
   pool_t* p = malloc(sizeof(pool_t));
@@ -42,6 +45,9 @@ void pl_ready(pool_t* p) {
 }
 
 void pl_free(pool_t* p) {
+  int i;
+  for (i = 0; i < p->n_conns; i++)
+    cn_free(p->conns[i]);
   free(p->conns);
   free(p);
 }
