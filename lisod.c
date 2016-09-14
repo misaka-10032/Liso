@@ -11,6 +11,7 @@
 #include <netinet/ip.h>
 #include <signal.h>
 #include <sys/select.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -155,6 +156,9 @@ int main(int argc, char* argv[]) {
         errno = 0;
         continue;
       }
+
+      // make client_sock non-blocking
+      fcntl(client_sock, F_SETFL, O_NONBLOCK);
 
       if (pool->n_conns == MAX_CONNS) {
         fprintf(stderr, "Max conns reached; drop client %d.\n", client_sock);
