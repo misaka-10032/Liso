@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
-// BUFSZ will be allocated for each buffer
+// buf capacity
 #define BUFSZ 8192
 // end of line
 #define CRLF "\r\n"
@@ -25,11 +25,20 @@ typedef struct {
   void* data_p;
 } buf_t;
 
-// create a new buffer
+// constructor
 buf_t* buf_new();
-// destroy a buffer
+// destructor
 void buf_free(buf_t* buf);
 // get the end pointer of the buffer
-void* buf_end();
+void* buf_end(buf_t* buf);
+// get the remain size from data_p to sz
+ssize_t buf_rsize(buf_t* buf);
+// reset data_p
+void buf_reset();
+
+// constructor for memory-mapped buffer
+buf_t* mmbuf_new(int fd, size_t sz);
+// destroy a mmbuf
+void mmbuf_free(buf_t* buf);
 
 #endif // IO_H

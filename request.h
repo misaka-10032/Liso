@@ -11,7 +11,7 @@
 
 #define HDR_KEYSZ 64
 #define HDR_VALSZ 256
-#define REQ_PATHSZ 256
+#define REQ_URISZ 256
 #define REQ_VERSZ 32
 #define REQ_HOSTSZ 256
 #define REQ_CTYPESZ 64
@@ -41,9 +41,12 @@ void hdr_free(hdr_t* hdrs);
  */
 typedef struct {
   enum {
-    GET=1, HEAD, POST, OTHER
+    M_GET=1,
+    M_HEAD,
+    M_POST,
+    M_OTHER
   } method;
-  char path[REQ_PATHSZ+1];
+  char uri[REQ_URISZ+1];
   char version[REQ_VERSZ+1];
   // Commonly used headers
   char host[REQ_HOSTSZ+1];
@@ -55,7 +58,11 @@ typedef struct {
   ssize_t rsize;
   // Phase of parsing
   enum {
-    START=1, HEADER, BODY, DONE, ABORT
+    REQ_START=1,
+    REQ_HEADER,
+    REQ_BODY,
+    REQ_DONE,
+    REQ_ABORT
   } phase;
 } req_t;
 

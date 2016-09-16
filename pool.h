@@ -13,6 +13,7 @@
 
 #include <sys/select.h>
 #include "request.h"
+#include "response.h"
 #include "io.h"
 
 #define MAX_CONNS (FD_SETSIZE - 10)
@@ -23,11 +24,10 @@ typedef struct {
   int fd;
   // Idx in the pool
   int idx;
-  // Number of bytes remained in this connection
-  // -1 if aborted.
-  ssize_t remained;
   // Parsed request header
   req_t* req;
+  // Response
+  resp_t* resp;
   // Buffer for the connection
   buf_t* buf;
 } conn_t;

@@ -13,14 +13,15 @@ conn_t* cn_new(int fd, int idx) {
   conn_t* conn = malloc(sizeof(conn_t));
   conn->fd = fd;
   conn->idx = idx;
-  conn->remained = BUFSZ;
   conn->req = req_new();
-  conn->buf = buf_new();
+  conn->resp = resp_new();
+  conn->buf = buf_new(BUFSZ);
   return conn;
 }
 
 void cn_free(conn_t* conn) {
   req_free(conn->req);
+  resp_free(conn->resp);
   buf_free(conn->buf);
   free(conn);
 }
@@ -28,7 +29,7 @@ void cn_free(conn_t* conn) {
 pool_t* pl_new(int sock) {
   pool_t* p = malloc(sizeof(pool_t));
   p->n_conns = 0;
-  p->conns = malloc(sizeof(conn_t) * MAX_CONNS);
+  p->conns = malloc(sizeof(conn_t*) * MAX_CONNS);
 
   p->max_fd = sock;
   FD_ZERO(&p->read_set);
@@ -45,10 +46,14 @@ void pl_ready(pool_t* p) {
 }
 
 void pl_free(pool_t* p) {
+  if (!p)
+    return;
+
   int i;
   for (i = 0; i < p->n_conns; i++)
     cn_free(p->conns[i]);
   free(p->conns);
+
   free(p);
 }
 
@@ -73,6 +78,7 @@ int pl_del_conn(pool_t* p, conn_t* c) {
     return -1;
   }
   FD_CLR(c->fd, &p->read_set);
+  FD_CLR(c->fd, &p->write_set);
   p->conns[c->idx] = p->conns[--p->n_conns];
   p->conns[c->idx]->idx = c->idx;
   p->conns[p->n_conns] = NULL;

@@ -5,6 +5,7 @@
  */
 
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include "utils.h"
 
@@ -44,4 +45,14 @@ char* strcpy0(char* d, const char* s) {
   return strcat(d, s);
 }
 
+bool caseendswith(const char* str, const char* suffix) {
+  if (!str || !suffix)
+    return false;
 
+  size_t l_str = strlen(str);
+  size_t l_suffix = strlen(suffix);
+  if (l_suffix > l_str)
+    return false;
+
+  return strncasecmp(str+l_str-l_suffix, suffix, l_suffix) == 0;
+}

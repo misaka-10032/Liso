@@ -5,6 +5,7 @@
  */
 
 #include <string.h>
+#include <strings.h>
 #include "request.h"
 #include "logging.h"
 #include "io.h"
@@ -35,15 +36,15 @@ void hdr_free(hdr_t* hdr) {
 
 req_t* req_new() {
   req_t* req = malloc(sizeof(req_t));
-  req->method = OTHER;
-  req->path[0] = 0;
+  req->method = M_OTHER;
+  req->uri[0] = 0;
   req->version[0] = 0;
   req->host[0] = 0;
   req->ctype[0] = 0;
   req->clen = 0;
   req->rsize = 0;
   req->hdrs = hdr_new(NULL, NULL);
-  req->phase = START;
+  req->phase = REQ_START;
   return req;
 }
 
@@ -99,7 +100,7 @@ void req_insert(req_t* req, hdr_t* hdr) {
 ssize_t req_parse(req_t* req, buf_t* buf) {
   char* p;
   /******** phase START ********/
-  if (req->phase == START) {
+  if (req->phase == REQ_START) {
     /* parse method */
     proceed_inline();
     char method[9];
@@ -109,11 +110,11 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
     log_line("[req_parse] Parsed method: %s", method);
 #endif
     if (!strncasecmp(method, "GET", 3) && issp(p[3]))
-      req->method = GET;
+      req->method = M_GET;
     else if (!strncasecmp(method, "HEAD", 4) && issp(p[4]))
-      req->method = HEAD;
+      req->method = M_HEAD;
     else if (!strncasecmp(method, "POST", 4) && issp(p[4]))
-      req->method = POST;
+      req->method = M_POST;
     else {
 #if DEBUG >= 1
       log_line("[req_parse] Method not supported: %s", method);
@@ -121,17 +122,30 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
       return -1;
     }
 
-    /* parse path */
+    /* parse uri */
     proceed_inline();
-    *req->path = 0;
-    strncpy0(req->path, p, 1+min(REQ_PATHSZ, (char*) buf->data_p-p));
+    *req->uri = 0;
+    strncpy0(req->uri, p, min(REQ_URISZ, (char*) buf->data_p-p));
 #if DEBUG >= 2
-    log_line("[req_parse] Parsed path: %s", req->path);
+    log_line("[req_parse] Parsed uri: %s", req->uri);
 #endif
+
+    char* host_start = NULL;
+    char* host_end = NULL;
+    if (strcasecmp(req->uri, "http://"))
+      host_start = req->uri + 8;
+    else if (strcasecmp(req->uri, "https://"))
+      host_start = req->uri + 9;
+    if (host_start)
+      host_end = strchr(host_start, '/');
+    if (host_start && host_end) {
+      strncpy0(req->host, host_start, host_end-host_start);
+      strcpy0(req->uri, host_end);
+    }
 
     /* parse version */
     proceed_inline();
-    strncpy0(req->version, p, 1+min(REQ_VERSZ, (char*) buf->data_p-p));
+    strncpy0(req->version, p, min(REQ_VERSZ, (char*) buf->data_p-p));
 #if DEBUG >= 2
     log_line("[req_parse] Parsed version: %s", req->version);
 #endif
@@ -142,21 +156,21 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
 #if DEBUG >= 1
       log_line("[req_parse] Met %c%c; \\r\\n expected.", p[-1], p[0]);
 #endif
-      req->phase = ABORT;
+      req->phase = REQ_ABORT;
       return -2;
     }
 
     buf->data_p++;
-    req->phase = HEADER;
+    req->phase = REQ_HEADER;
   }
 
   /******** phase HEADER ********/
-  if (req->phase == HEADER) {
+  if (req->phase == REQ_HEADER) {
     while (buf->data_p < buf_end(buf)) {
       proceed_line();
       if (eol()) {
         buf->data_p++;
-        req->phase = BODY;
+        req->phase = REQ_BODY;
         req->rsize = req->clen;
         break;
       }
@@ -169,7 +183,7 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
 #if DEBUG >= 1
         log_line("[req_parse] No : is found.");
 #endif
-        req->phase = ABORT;
+        req->phase = REQ_ABORT;
         return -2;
       }
       strncpy0(key, p, min(HDR_KEYSZ, q-p));
@@ -190,7 +204,7 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
 #if DEBUG >= 1
           log_line("[req_parse] Invalid %s: %s", key, val);
 #endif
-          req->phase = ABORT;
+          req->phase = REQ_ABORT;
           return -2;
         }
       else
@@ -214,18 +228,18 @@ ssize_t req_pack(req_t* req, buf_t* buf) {
   *(char*) buf->data_p = 0;
   /* pack method */
   switch (req->method) {
-    case GET:  strcpy0(buf->data_p, "GET");
-               break;
-    case HEAD: strcpy0(buf->data_p, "HEAD");
-               break;
-    case POST: strcpy0(buf->data_p, "POST");
-               break;
-    default:   strcpy0(buf->data_p, "OTHER");
+    case M_GET:  strcpy0(buf->data_p, "GET");
+                 break;
+    case M_HEAD: strcpy0(buf->data_p, "HEAD");
+                 break;
+    case M_POST: strcpy0(buf->data_p, "POST");
+                 break;
+    default:     strcpy0(buf->data_p, "OTHER");
   }
   pack_next(' ');
 
-  /* pack path */
-  strcpy0(buf->data_p, req->path);
+  /* pack uri */
+  strcpy0(buf->data_p, req->uri);
   pack_next(' ');
 
   /* pack version */

@@ -54,10 +54,10 @@ run: all
 	./$(SRV) 10032 443 $(RUN)/log $(RUN)/lock $(RUN)/www \
 		$(RUN)/cgi $(RUN)/prv $(RUN)/cert
 
-valgrind: all
-	valgrind ./$(SRV) 10032 443 $(RUN)/log $(RUN)/lock $(RUN)/www \
-		$(RUN)/cgi $(RUN)/prv $(RUN)/cert
-
+# TODO: valgrind gets stuck
+#valgrind: all
+#	valgrind ./$(SRV) 10032 443 $(RUN)/log $(RUN)/lock $(RUN)/www \
+#		$(RUN)/cgi $(RUN)/prv $(RUN)/cert
 
 echo: all
 	./$(CLI) localhost 10032
@@ -77,6 +77,6 @@ test1: all
 test: test0 test1
 
 clean:
-	@rm -rf $(BUILD) $(RUN) $(SRV) $(CLI) tags *.dSYM
+	@rm -rf $(BUILD) $(RUN)/log $(SRV) $(CLI) tags *.dSYM
 
 .PHONY: pre tag all clean run test*
