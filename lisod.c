@@ -57,10 +57,12 @@ int close_socket(int sock) {
 }
 
 // clean up the connection
-void cleanup(conn_t* conn) {
+static void cleanup(conn_t* conn) {
 #if DEBUG >= 1
   log_line("[cleanup] %d.", conn->fd);
 #endif
+  int yes = 1;
+  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
   close_socket(conn->fd);
   if (pl_del_conn(pool, conn) < 0) {
     fprintf(stderr, "Error deleting connection.\n");
@@ -68,7 +70,7 @@ void cleanup(conn_t* conn) {
 }
 
 // tear down the server
-void teardown(int rc) {
+static void teardown(int rc) {
   close_socket(sock);
   pl_free(pool);
   log_line("-------- Liso Server stops --------");
@@ -76,7 +78,7 @@ void teardown(int rc) {
   exit(rc);
 }
 
-void signal_handler(int sig) {
+static void signal_handler(int sig) {
   switch (sig) {
     case SIGINT:
     case SIGTERM:
@@ -88,7 +90,7 @@ void signal_handler(int sig) {
 // switch from recv mode to send mode
 // returns -1 if error is occurred.
 //          1 if normal.
-int liso_recv_to_send(conn_t* conn) {
+static int liso_recv_to_send(conn_t* conn) {
   int i;
   buf_t* buf = conn->buf;
   resp_t* resp = conn->resp;
@@ -139,74 +141,114 @@ int liso_recv_to_send(conn_t* conn) {
 // returns -1 if error is encountered
 //          0 if not ready
 //          1 if it's normal.
-int liso_recv(conn_t* conn) {
+static int liso_recv(conn_t* conn) {
 
   if (!FD_ISSET(conn->fd, &pool->read_ready))
     return 0;
 
-  buf_t* buf = conn->buf;
-  buf->data_p = buf->data;
-  buf->sz = recv(conn->fd, buf->data, BUFSZ, 0);
-  if (buf->sz < 0) {
+  /******** recv msg ********/
+  ssize_t rsize = BUFSZ - conn->buf->sz;
+
+  if (rsize <= 0) {
+    // header to large
+    conn->req->phase = REQ_ABORT;
+    // TODO: don't clean up here
+    cleanup(conn);
+    return -1;
+  }
+
+  // append to conn buf
+  ssize_t dsize = recv(conn->fd, buf_end(conn->buf), rsize, 0);
+  if (dsize < 0) {
     conn->req->phase = REQ_ABORT;
     cleanup(conn);
     fprintf(stderr, "Error in recv: %s\n", strerror(errno));
     errno = 0;
     return -1;
   }
+  // update size
+  conn->buf->sz += dsize;
 
-  /* content received */
-  if (buf->sz > 0) {
-#if DEBUG >= 3
-    log_line("[recv] from %d", conn->fd);
-#endif
-    ssize_t rc;
+  /**** client closed ****/
+  if (dsize == 0) {
 #if DEBUG >= 1
-    log_line("[main loop] parse req for %d", conn->fd);
+    log_line("[liso_recv] client closed from %d", conn->fd);
 #endif
-    rc = req_parse(conn->req, buf);
+    conn->req->phase = REQ_ABORT;
+    cleanup(conn);
+    return -1;
+  }
 
-    // handle bad header
-    if (rc < 0) {
-      conn->req->phase = REQ_ABORT;
-      if (rc == -1) {
-        resp_err(501, conn->fd);
-      } else {
-        resp_err(400, conn->fd);
+  /******** parse content ********/
+#if DEBUG >= 1
+  log_line("[liso_recv] parse req for %d", conn->fd);
+  log_line("[liso_recv] phase is %d", conn->req->phase);
+#endif
+  if (conn->req->phase == REQ_START ||
+      conn->req->phase == REQ_HEADER) {
+    // Here we need to parse line by line.
+    // conn->buf->data_p maintains up to which line we have parsed.
+    // We need to copy as much line as possible to the local buffer.
+    // After copying, remain data_p at the next position of last \n.
+
+    char *p, *q = conn->buf->data_p - 1;
+    for (p = (char*) conn->buf->data_p; p < (char*) buf_end(conn->buf); p++)
+      if (*p == '\n')
+        q = p + 1;
+
+    // There is something to parse
+    if (q > (char*) conn->buf->data_p) {
+
+      buf_t* buf_lines = buf_new();
+
+      buf_lines->sz = q - (char*) conn->buf->data_p;
+      memcpy(buf_lines->data, conn->buf->data_p, buf_lines->sz);
+      conn->buf->data_p = q;
+
+      ((char*)buf_lines->data)[buf_lines->sz] = 0;
+      printf("!!! Lines are:\n%s", buf_lines->data);
+
+      ssize_t rc;
+      rc = req_parse(conn->req, buf_lines);
+
+      buf_free(buf_lines);
+
+      // TODO: do it later when write ready
+      // handle bad header
+      if (rc < 0) {
+        conn->req->phase = REQ_ABORT;
+        if (rc == -1) {
+          resp_err(501, conn->fd);
+        } else {
+          resp_err(400, conn->fd);
+        }
+        cleanup(conn);
+        return -1;
       }
-      cleanup(conn);
-      return -1;
     }
+  }
 
-    if (conn->req->phase == REQ_BODY) {
-      // TODO: stream body
-      // TODO: do I really need Content-Length?
-      ssize_t size = buf_end(conn->buf) - conn->buf->data_p;
-      conn->req->rsize -= size;
-      if (conn->req->rsize <= 0) {
-        conn->req->phase = REQ_DONE;
-      }
+  if (conn->req->phase == REQ_BODY) {
+    // TODO: stream body
+    // TODO: do I really need Content-Length?
+    ssize_t size = buf_end(conn->buf) - conn->buf->data_p;
+    conn->req->rsize -= size;
+    if (conn->req->rsize <= 0) {
+      conn->req->phase = REQ_DONE;
     }
+    // after streaming body, reset data pointer
+    buf_reset(conn->buf);
+  }
 
-    if (conn->req->phase == REQ_DONE) {
+  if (conn->req->phase == REQ_DONE) {
 #if DEBUG >= 2
-      buf_t* dump = buf_new();
-      req_pack(conn->req, dump);
-      log_line("[main loop] parsed req\n%s", dump->data);
-      buf_free(dump);
+    buf_t* dump = buf_new();
+    req_pack(conn->req, dump);
+    log_line("[main loop] parsed req\n%s", dump->data);
+    buf_free(dump);
 #endif
-      // change mode
-      return liso_recv_to_send(conn);
-    }
-
-  /* content ends */
-  // TODO: need this?
-  } else if (buf->sz == 0) {
-#if DEBUG >= 1
-    log_line("[recv end] from %d", conn->fd);
-#endif
-    // change task
-    liso_recv_to_send(conn);
+    // change mode
+    return liso_recv_to_send(conn);
   }
 
   return 1;
@@ -216,7 +258,7 @@ int liso_recv(conn_t* conn) {
 // returns -1 if error is encountered.
 //         0  if not ready.
 //         1  if normal.
-int liso_send(conn_t* conn) {
+static int liso_send(conn_t* conn) {
 
   if (!FD_ISSET(conn->fd, &pool->write_ready))
     return 0;

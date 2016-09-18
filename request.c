@@ -97,6 +97,10 @@ void req_insert(req_t* req, hdr_t* hdr) {
                p < (char*) buf_end(buf) &&  \
                p[-1] == '\r' && p[0]  == '\n')
 
+// This parser is able to parse multiple lines, including the first
+// request line and the following header lines. To use this function,
+// just feed in as many lines as possible. Parser will start parsing
+// from buf->data_p. Caller should make sure buf ends with \n.
 ssize_t req_parse(req_t* req, buf_t* buf) {
   char* p;
   /******** phase START ********/

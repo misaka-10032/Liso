@@ -14,7 +14,8 @@ buf_t* buf_new() {
   buf_t* buf = malloc(sizeof(buf_t));
   buf->data = malloc(BUFSZ+1);
   buf->data_p = buf->data;
-  buf->sz = BUFSZ;
+  *(char*) buf->data_p = 0;
+  buf->sz = 0;
   return buf;
 }
 
@@ -34,6 +35,7 @@ ssize_t buf_rsize(buf_t* buf) {
 void buf_reset(buf_t* buf) {
   buf->data_p = buf->data;
   *(char*) buf->data_p = 0;
+  buf->sz = 0;
 }
 
 buf_t* mmbuf_new(int fd, size_t sz) {
