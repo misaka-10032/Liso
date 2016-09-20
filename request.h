@@ -8,6 +8,7 @@
 #define REQUEST_H
 
 #include "io.h"
+#include "utils.h"
 
 #define HDR_KEYSZ 64
 #define HDR_VALSZ 256
@@ -52,6 +53,7 @@ typedef struct {
   char host[REQ_HOSTSZ+1];
   char ctype[REQ_CTYPESZ+1];
   ssize_t clen;
+  bool alive;
   // All other headers
   hdr_t* hdrs;
   // Remained content length
@@ -62,12 +64,14 @@ typedef struct {
     REQ_HEADER,
     REQ_BODY,
     REQ_DONE,
-    REQ_ABORT
+    REQ_ABORT,
   } phase;
 } req_t;
 
 // create an empty request
 req_t* req_new();
+// reset a request
+void req_reset(req_t* req);
 // destroy a request
 void req_free(req_t* req);
 // insert a header into the header list

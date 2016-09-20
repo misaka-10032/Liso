@@ -39,6 +39,7 @@ void buf_reset(buf_t* buf) {
 }
 
 buf_t* mmbuf_new(int fd, size_t sz) {
+
   buf_t* mmbuf = malloc(sizeof(buf_t));
   mmbuf->sz = sz;
   mmbuf->data = mmap(NULL, sz, PROT_READ, MAP_PRIVATE, fd, 0);
@@ -56,8 +57,10 @@ buf_t* mmbuf_new(int fd, size_t sz) {
 }
 
 void mmbuf_free(buf_t* mmbuf) {
+
   if (!mmbuf)
     return;
+
   munmap(mmbuf->data, mmbuf->sz);
   free(mmbuf);
 }

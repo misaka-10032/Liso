@@ -8,6 +8,7 @@
 #define RESPONSE_H
 
 #include "io.h"
+#include "utils.h"
 
 #define RESP_FTYPESZ 64
 #define RESP_DATESZ 64
@@ -15,11 +16,15 @@
 typedef struct resp_s {
   enum {
     RESP_READY=1,
-    RESP_START,
-    RESP_DONE,
-    RESP_ABORT
+    RESP_HEADER,
+    RESP_BODY,
+    RESP_ABORT,  // decide to respond error, not yet prepared
+    RESP_ERROR,  // prepared error, and in the middle of sending error
   } phase;
+  int status;
   char ftype[RESP_FTYPESZ+1];
+  ssize_t clen;
+  bool alive;
   buf_t* mmbuf;
 } resp_t;
 
@@ -27,6 +32,8 @@ typedef struct resp_s {
 resp_t* resp_new();
 // destructor
 void resp_free(resp_t* resp);
+// reset response
+void resp_reset(resp_t* resp);
 
 /**
  * @brief Memory map a static file to resp.
@@ -42,13 +49,11 @@ ssize_t resp_mmap(resp_t* resp, char* path);
  * @param hdr The header to be built.
  * @return Header size.
  */
-size_t resp_hdr(const resp_t* resp, char* hdr);
+ssize_t resp_hdr(const resp_t* resp, char* hdr);
 
-/**
- * @brief Responds error page to client.
- * @param code Status code.
- * @param fd File descriptor to the client.
- */
-void resp_err(int code, int fd);
+// Returns error title given status code.
+const char* resp_title(int code);
+// Returns error msg given status code.
+const char* resp_msg(int code);
 
 #endif // RESPONSE_H

@@ -57,7 +57,8 @@ int close_socket(int sock) {
 }
 
 // clean up the connection
-static void cleanup(conn_t* conn) {
+// always return -1
+static int cleanup(conn_t* conn) {
 #if DEBUG >= 1
   log_line("[cleanup] %d.", conn->fd);
 #endif
@@ -67,6 +68,7 @@ static void cleanup(conn_t* conn) {
   if (pl_del_conn(pool, conn) < 0) {
     fprintf(stderr, "Error deleting connection.\n");
   }
+  return -1;
 }
 
 // tear down the server
@@ -87,16 +89,30 @@ static void signal_handler(int sig) {
   }
 }
 
+// recv error, prepare to respond error
+static void prepare_error_resp(conn_t* conn, int status) {
+  conn->req->phase = REQ_ABORT;
+  conn->resp->phase = RESP_ABORT;
+  conn->resp->status = status;
+  FD_SET(conn->fd, &pool->write_set);
+}
+
 // switch from recv mode to send mode
-// returns -1 if error is occurred.
+// called only when recv succeeds
+// returns -1 if conn is cleaned up
 //          1 if normal.
 static int liso_recv_to_send(conn_t* conn) {
+#if DEBUG >= 1
+  log_line("[recv_to_send] %d", conn->fd);
+#endif
+
   int i;
-  buf_t* buf = conn->buf;
-  resp_t* resp = conn->resp;
 
   FD_CLR(conn->fd, &pool->read_set);
   FD_SET(conn->fd, &pool->write_set);
+
+  // sync Connection field
+  conn->resp->alive = conn->req->alive;
 
   char path[REQ_URISZ*3];
   strncpy0(path, www_folder, REQ_URISZ);
@@ -105,7 +121,7 @@ static int liso_recv_to_send(conn_t* conn) {
   log_line("[recv_to_send] path is %s", path);
 #endif
 
-  bool mmapped = resp_mmap(resp, path) >= 0;
+  bool mmapped = resp_mmap(conn->resp, path) >= 0;
 
   if (!mmapped) {
 
@@ -118,43 +134,76 @@ static int liso_recv_to_send(conn_t* conn) {
 #if DEBUG >= 1
       log_line("[recv_to_send] try path %s", path);
 #endif
-      mmapped = resp_mmap(resp, path) >= 0;
+      mmapped = resp_mmap(conn->resp, path) >= 0;
       if (mmapped)
         break;
     }
   }
 
   if (!mmapped) {
-    resp->phase = RESP_ABORT;
-    cleanup(conn);
-    return -1;
+    prepare_error_resp(conn, 404);
+    return 1;
   }
 
   /* prepare header */
-  buf_reset(buf);
-  buf->sz = resp_hdr(resp, buf->data);
-  conn->resp->phase = RESP_START;
+  conn->resp->phase = RESP_HEADER;
+  buf_reset(conn->buf);
+  conn->buf->sz = resp_hdr(conn->resp, conn->buf->data);
+
+  /* prepare body */
+  // stealthily put some body into header buffer
+  if (conn->req->method != M_HEAD) {
+    ssize_t rsize = BUFSZ - conn->buf->sz;
+    ssize_t asize = min(rsize, conn->resp->clen);
+    memcpy(buf_end(conn->buf), conn->resp->mmbuf->data_p, asize);
+    conn->buf->sz += asize;
+    conn->resp->mmbuf->data_p += asize;
+  }
+
+#if DEBUG >= 2
+  *(char*) buf_end(conn->buf) = 0;
+  log_line("[resp_hdr] response header for %d is\n%s",
+           conn->fd, conn->buf->data);
+#endif
+
   return 1;
 }
 
+// recv and abort
+// returns -1 if conn will be cleaned up
+//          1 if normal
+static int recv_abort(conn_t* conn) {
+  // recv the rubbish anyway
+  ssize_t rc = recv(conn->fd, conn->buf->data, BUFSZ, 0);
+  // finally you stopped talking
+  if (rc <= 0) {
+    return cleanup(conn);
+  } else {
+    return 1;
+  }
+}
+
 // recv from conn
-// returns -1 if error is encountered
-//          0 if not ready
-//          1 if it's normal.
+// returns -1 if fatal error occurs, conn cleaned up.
+//          0 if not ready, may still needs send.
+//          1 if normal.
 static int liso_recv(conn_t* conn) {
 
   if (!FD_ISSET(conn->fd, &pool->read_ready))
     return 0;
 
+  // ignore the aborted ones
+  if (conn->req->phase == REQ_ABORT) {
+    return recv_abort(conn);
+  }
+
   /******** recv msg ********/
   ssize_t rsize = BUFSZ - conn->buf->sz;
 
+  // header to large
   if (rsize <= 0) {
-    // header to large
-    conn->req->phase = REQ_ABORT;
-    // TODO: don't clean up here
-    cleanup(conn);
-    return -1;
+    prepare_error_resp(conn, 400);
+    return recv_abort(conn);
   }
 
   // append to conn buf
@@ -175,8 +224,7 @@ static int liso_recv(conn_t* conn) {
     log_line("[liso_recv] client closed from %d", conn->fd);
 #endif
     conn->req->phase = REQ_ABORT;
-    cleanup(conn);
-    return -1;
+    return cleanup(conn);
   }
 
   /******** parse content ********/
@@ -205,31 +253,25 @@ static int liso_recv(conn_t* conn) {
       memcpy(buf_lines->data, conn->buf->data_p, buf_lines->sz);
       conn->buf->data_p = q;
 
-      ((char*)buf_lines->data)[buf_lines->sz] = 0;
-      printf("!!! Lines are:\n%s", buf_lines->data);
-
       ssize_t rc;
       rc = req_parse(conn->req, buf_lines);
 
       buf_free(buf_lines);
 
-      // TODO: do it later when write ready
       // handle bad header
       if (rc < 0) {
-        conn->req->phase = REQ_ABORT;
         if (rc == -1) {
-          resp_err(501, conn->fd);
+          prepare_error_resp(conn, 501);
         } else {
-          resp_err(400, conn->fd);
+          prepare_error_resp(conn, 400);
         }
-        cleanup(conn);
-        return -1;
+        return 1;
       }
     }
   }
 
   if (conn->req->phase == REQ_BODY) {
-    // TODO: stream body
+    // TODO: stream body. effective data is [data_p, data+sz)
     // TODO: do I really need Content-Length?
     ssize_t size = buf_end(conn->buf) - conn->buf->data_p;
     conn->req->rsize -= size;
@@ -254,8 +296,64 @@ static int liso_recv(conn_t* conn) {
   return 1;
 }
 
+// reset req/resp or recycle them.
+// always return 1 indicating no mistake.
+static int liso_reset_or_recycle(conn_t* conn) {
+  if (!conn->resp->alive) {
+    return cleanup(conn);
+  }
+
+  buf_reset(conn->buf);
+  req_reset(conn->req);
+  resp_reset(conn->resp);
+  FD_SET(conn->fd, &pool->read_set);
+  FD_CLR(conn->fd, &pool->write_set);
+
+  return 1;
+}
+
+// prepare the error msg
+static void liso_prepare_error_page(conn_t* conn) {
+  buf_t* buf = conn->buf;
+  req_t* req = conn->req;
+  resp_t* resp = conn->resp;
+
+  // reset buf so as to put error header/body in it
+  buf_reset(buf);
+
+  // sync Connection field
+  resp->alive = req->alive;
+
+  // update Content-Length field
+  const char* msg = resp_msg(resp->status);
+  resp->clen = strlen(msg);
+
+  buf->sz = resp_hdr(resp, (char*) buf->data);
+  memcpy(buf_end(buf), msg, resp->clen);
+  buf->sz += resp->clen;
+  conn->resp->phase = RESP_ERROR;
+}
+
+// send err msg to client
+static int liso_handle_error(conn_t* conn) {
+  buf_t* buf = conn->buf;
+  ssize_t rsize = buf_end(buf) - buf->data_p;
+
+  ssize_t rc = send(conn->fd, buf->data_p, rsize, 0);
+
+  if (rc <= 0) {
+    fprintf(stderr, "Error sending error msg.\n");
+    return cleanup(conn);
+  }
+
+  buf->data_p += rc;
+  if (buf->data_p >= buf_end(buf))
+    liso_reset_or_recycle(conn);
+  return 1;
+}
+
 // send to conn
-// returns -1 if error is encountered.
+// returns -1 if conn is cleaned up.
 //         0  if not ready.
 //         1  if normal.
 static int liso_send(conn_t* conn) {
@@ -263,46 +361,63 @@ static int liso_send(conn_t* conn) {
   if (!FD_ISSET(conn->fd, &pool->write_ready))
     return 0;
 
-  // send content in buf_dst.
-  // then copy buf_src to buf_dst for the next chunk.
-  buf_t* buf_src = conn->resp->mmbuf;
-  buf_t* buf_dst = conn->buf;
+  if (conn->resp->phase == RESP_ABORT)
+    liso_prepare_error_page(conn);
 
-  if (send(conn->fd, buf_dst->data, buf_dst->sz, 0) < 0) {
-    conn->resp->phase = RESP_ABORT;
+  if (conn->resp->phase == RESP_ERROR)
+    return liso_handle_error(conn);
+
+  if (conn->resp->phase == RESP_HEADER) {
+    buf_t* buf = conn->buf;
+    ssize_t rsize = buf_end(buf) - buf->data_p;
+
+    ssize_t rc = send(conn->fd, buf->data_p, rsize, 0);
+
+    if (rc <= 0) {
 #if DEBUG >= 1
-    log_line("[liso_send] Error when sending to %d.", conn->fd);
+      log_line("[liso_send] Error when sending to %d.", conn->fd);
 #endif
-    cleanup(conn);
-    return -1;
-  }
+      return cleanup(conn);
+    }
 
 #if DEBUG >= 2
-  log_line("[liso_send] Sent %zd bytes to %d", buf_dst->sz, conn->fd);
+    log_line("[liso_send] Sent %zd bytes of header to %d", rc, conn->fd);
 #endif
 
-  if (conn->req->method == M_HEAD) {
-    conn->resp->phase = RESP_DONE;
-#if DEBUG >= 1
-    log_line("[liso_send] Finished HEAD response to %d.", conn->fd);
-#endif
-    cleanup(conn);
+    buf->data_p += rc;
+    if (rc == rsize)
+      conn->resp->phase = RESP_BODY;
+    if (conn->req->method == M_HEAD ||
+        conn->resp->mmbuf->data_p >= buf_end(conn->resp->mmbuf))
+      return liso_reset_or_recycle(conn);
+
+    // only do one send at a time, so return early.
+    return 1;
   }
 
-  ssize_t sz = min(BUFSZ, buf_rsize(buf_src));
-  if (sz == 0) {
-    conn->resp->phase = RESP_DONE;
+  if (conn->resp->phase == RESP_BODY) {
+    buf_t* buf = conn->resp->mmbuf;
+    ssize_t rsize = buf_end(buf) - buf->data_p;
+    ssize_t asize = min(BUFSZ, rsize);
+
+    ssize_t rc = send(conn->fd, buf->data_p, asize, 0);
+
+    if (rc <= 0) {
 #if DEBUG >= 1
-    log_line("[liso_send] Finished sending to %d.", conn->fd);
+      log_line("[liso_send] Error when sending to %d.", conn->fd);
 #endif
-    cleanup(conn);
-    return -1;
+      return cleanup(conn);
+    }
+
+#if DEBUG >= 2
+    log_line("[liso_send] Sent %zd bytes of body to %d", rc, conn->fd);
+#endif
+
+    buf->data_p += rc;
+    if (buf->data_p >= buf_end(buf))
+      liso_reset_or_recycle(conn);
   }
 
-  /* prepare for the next chunk */
-  memcpy(buf_dst->data, buf_src->data_p, sz);
-  buf_src->data_p += sz;
-  buf_dst->sz = sz;
   return 1;
 }
 
@@ -339,9 +454,9 @@ int main(int argc, char* argv[]) {
 
   /* setup log */
   log_init(log_file);
-
   log_line("-------- Liso Server starts --------");
-  /* all networked programs must create a socket */
+
+  /* create listener socket */
   if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == -1) {
     fprintf(stderr, "Failed creating socket.\n");
     teardown(EXIT_FAILURE);
@@ -350,10 +465,10 @@ int main(int argc, char* argv[]) {
   /* init conn pool */
   pool = pl_new(sock);
 
+  /* bind port */
   addr.sin_family = AF_INET;
   addr.sin_port = htons(http_port);
   addr.sin_addr.s_addr = INADDR_ANY;
-  /* servers bind sockets to ports---notify the OS they accept connections */
   if (bind(sock, (struct sockaddr *) &addr, sizeof(addr))) {
     fprintf(stderr, "Failed binding socket.\n");
     teardown(EXIT_FAILURE);
@@ -416,7 +531,12 @@ int main(int argc, char* argv[]) {
     for (i = 0; i < pool->n_conns; i++) {
       int rc;
       rc = liso_recv(pool->conns[i]);
-      if (rc < 0) continue;
+      if (rc < 0) {
+        // the fatal conn is cleaned up and the last one replaces it.
+        // go back and forward to process the new connection
+        i -= 1;
+        continue;
+      }
       rc = liso_send(pool->conns[i]);
     }
   }

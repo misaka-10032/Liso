@@ -17,21 +17,42 @@
 #include "utils.h"
 #include "logging.h"
 
-static char err400[] =
+static const char title200[] = "200 OK";
+
+static const char title400[] = "400 Bad Request";
+static const char msg400[] =
 "<html>" CRLF
 "<head><title>400 Bad Request</title>title></head>head>" CRLF
 "<body bgcolor=\"white\">" CRLF
 "<center><h1>400 Bad Request</h1>h1></center>center>" CRLF
 ;
 
-static char err501[] =
+static const char title404[] = "404 Not Found";
+static const char msg404[] =
+"<html>" CRLF
+"<head><title>404 Not Found</title>title></head>head>" CRLF
+"<body bgcolor=\"white\">" CRLF
+"<center><h1>404 Not Found</h1>h1></center>center>" CRLF
+;
+
+static const char title500[] = "500 Internal Server Error";
+static const char msg500[] =
+"<html>" CRLF
+"<head><title>500 Internal Server Error</title>title></head>head>" CRLF
+"<body bgcolor=\"white\">" CRLF
+"<center><h1>500 Internal Server Error</h1>h1></center>center>" CRLF
+;
+
+static const char title501[] = "501 Not Implemented";
+static const char msg501[] =
 "<html>" CRLF
 "<head><title>501 Not Implemented</title>title></head>head>" CRLF
 "<body bgcolor=\"white\">" CRLF
 "<center><h1>501 Not Implemented</h1>h1></center>center>" CRLF
 ;
 
-static char err503[] =
+static const char title503[] = "503 Service Unavailable";
+static const char msg503[] =
 "<html>" CRLF
 "<head><title>503 Service Temporarily Unavailable</title>title></head>head>" CRLF
 "<body bgcolor=\"white\">" CRLF
@@ -40,9 +61,18 @@ static char err503[] =
 
 resp_t* resp_new() {
   resp_t* resp = malloc(sizeof(resp_t));
-  resp->phase = RESP_READY;
   resp->mmbuf = NULL;
+  resp_reset(resp);
   return resp;
+}
+
+void resp_reset(resp_t* resp) {
+  resp->phase = RESP_READY;
+  resp->status = 200;
+  resp->clen = 0;
+  resp->alive = true;
+  mmbuf_free(resp->mmbuf);
+  resp->mmbuf = NULL;
 }
 
 void resp_free(resp_t* resp) {
@@ -53,7 +83,7 @@ void resp_free(resp_t* resp) {
   free(resp);
 }
 
-void get_ftype(char* path, char* ftype) {
+static void get_ftype(char* path, char* ftype) {
 
   if (caseendswith(path, ".html") ||
       caseendswith(path, ".htm"))
@@ -111,32 +141,35 @@ ssize_t resp_mmap(resp_t* resp, char* path) {
 
   close(fd);
 
+  /* update header fields */
+  resp->clen = s.st_size;
   get_ftype(path, resp->ftype);
 
   return s.st_size;
 }
 
-size_t resp_hdr(const resp_t* resp, char* hdr) {
+ssize_t resp_hdr(const resp_t* resp, char* hdr) {
 
   char* hdr_p = hdr;
-  strcpy0(hdr_p, "HTTP/1.1 200 OK\r\n");
+  sprintf(hdr_p, "HTTP/1.1 %s\r\n", resp_title(resp->status));
   hdr_p += strlen(hdr_p);
 
   char date[RESP_DATESZ];
   time_t t = time(NULL);
   struct tm tm = *localtime(&t);
-  strftime(date, RESP_DATESZ, "%a, %d %b %Y %T %z", &tm);
+  strftime(date, RESP_DATESZ, "%a, %d %b %Y %T %Z", &tm);
 
   sprintf(hdr_p, "Date: %s\r\n", date);
   hdr_p += strlen(hdr_p);
 
+  // TODO: global version
   strcpy0(hdr_p, "Server: Liso/0.1.0\r\n");
   hdr_p += strlen(hdr_p);
 
-  strcpy0(hdr_p, "Connection: Close\r\n");
+  sprintf(hdr_p, "Connection: %s\r\n", resp->alive ? "keep-alive" : "close");
   hdr_p += strlen(hdr_p);
 
-  sprintf(hdr_p, "Content-Length: %zd\r\n", resp->mmbuf->sz);
+  sprintf(hdr_p, "Content-Length: %zd\r\n", resp->clen);
   hdr_p += strlen(hdr_p);
 
   sprintf(hdr_p, "Content-Type: %s\r\n", resp->ftype);
@@ -148,22 +181,27 @@ size_t resp_hdr(const resp_t* resp, char* hdr) {
   return hdr_p - hdr;
 }
 
-void resp_err(int code, int fd) {
-
-  char* msg = "";
-  ssize_t msglen = 0;
-
+const char* resp_title(int code) {
   switch (code) {
-    case 400: msg = err400; break;
-    case 501: msg = err501; break;
-    case 503: msg = err503; break;
+    case 200: return title200;
+    case 400: return title400;
+    case 404: return title404;
+    case 501: return title501;
+    case 503: return title503;
     default:
-      fprintf(stderr, "Error(%d) undefined.\n", code);
-      break;
+      fprintf(stderr, "Status Code(%d) undefined.\n", code);
+      return title500;
   }
+}
 
-  msglen = strlen(msg);
-  if (send(fd, msg, msglen, 0) != msglen) {
-    fprintf(stderr, "Error sending error msg.\n");
+const char* resp_msg(int code) {
+  switch (code) {
+    case 400: return msg400;
+    case 404: return msg404;
+    case 501: return msg501;
+    case 503: return msg503;
+    default:
+      fprintf(stderr, "Status Code(%d) undefined.\n", code);
+      return msg500;
   }
 }

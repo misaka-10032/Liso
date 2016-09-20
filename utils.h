@@ -24,7 +24,7 @@
   #define min(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
-typedef enum { false, true } bool;
+typedef enum { false=0, true } bool;
 
 // strip space chars at beginning and the end
 void strstrip(char* str);

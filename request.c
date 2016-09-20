@@ -26,6 +26,9 @@ hdr_t* hdr_new(char* key, char* val) {
 }
 
 void hdr_free(hdr_t* hdr) {
+  if (!hdr)
+    return;
+
   hdr_t* p = hdr;
   while (p) {
     hdr_t* q = p->next;
@@ -36,6 +39,12 @@ void hdr_free(hdr_t* hdr) {
 
 req_t* req_new() {
   req_t* req = malloc(sizeof(req_t));
+  req->hdrs = NULL;
+  req_reset(req);
+  return req;
+}
+
+void req_reset(req_t* req) {
   req->method = M_OTHER;
   req->uri[0] = 0;
   req->version[0] = 0;
@@ -43,9 +52,10 @@ req_t* req_new() {
   req->ctype[0] = 0;
   req->clen = 0;
   req->rsize = 0;
+  req->alive = true;
+  hdr_free(req->hdrs);
   req->hdrs = hdr_new(NULL, NULL);
   req->phase = REQ_START;
-  return req;
 }
 
 void req_free(req_t* req) {
@@ -110,9 +120,14 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
     char method[9];
     log_line("[req_parse] Method size: %zd", (char*) buf->data_p-p);
     strncpy0(method, p, min(8, (char*) buf->data_p-p));
+
 #if DEBUG >= 2
     log_line("[req_parse] Parsed method: %s", method);
 #endif
+
+    if (strlen(method) == 0)
+      return -2;
+
     if (!strncasecmp(method, "GET", 3) && issp(p[3]))
       req->method = M_GET;
     else if (!strncasecmp(method, "HEAD", 4) && issp(p[4]))
@@ -197,11 +212,13 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
       log_line("[req_parse] key=%s, val=%s", key, val);
 #endif
 
-      if (!strcasecmp(key, "Host"))
+      if (!strcasecmp(key, "Host")) {
         strcpy0(req->host, val);
-      else if (!strcasecmp(key, "Content-Type"))
+
+      } else if (!strcasecmp(key, "Content-Type")) {
         strcpy0(req->ctype, val);
-      else if (!strcasecmp(key, "Content-Length"))
+
+      } else if (!strcasecmp(key, "Content-Length")) {
         if (isnum(val))
           req->clen = atoi(val);
         else {
@@ -211,8 +228,15 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
           req->phase = REQ_ABORT;
           return -2;
         }
-      else
+
+      } else if (!strcasecmp(key, "Connection")) {
+        if (!strcasecmp(val, "close")) {
+          req->alive = false;
+        }
+
+      } else {
         req_insert(req, hdr_new(key, val));
+      }
 
       // move to new line
       buf->data_p++;

@@ -30,7 +30,7 @@ all: $(SRV) $(CLI) $(TEST)
 pre:
 	@mkdir -p $(BUILD) $(RUN)
 
-tag:
+tags:
 	@ctags -R --exclude=.git --exclude=$(BUILD) --exclude=$(RUN) \
 		--languages=C
 
@@ -79,4 +79,4 @@ test: test0 test1
 clean:
 	@rm -rf $(BUILD) $(RUN)/log $(SRV) $(CLI) tags *.dSYM
 
-.PHONY: pre tag all clean run test*
+.PHONY: pre tags all clean run test*
