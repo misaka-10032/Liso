@@ -8,31 +8,13 @@
 #define REQUEST_H
 
 #include "io.h"
+#include "header.h"
 #include "utils.h"
 
-#define HDR_KEYSZ 64
-#define HDR_VALSZ 256
 #define REQ_URISZ 256
 #define REQ_VERSZ 32
 #define REQ_HOSTSZ 256
 #define REQ_CTYPESZ 64
-
-/**
- * @brief Request headers as key-val pairs.
- *
- * The entire header chain is organized as a singly
- * linked list. The first node is an empty guard.
- */
-typedef struct hdr_s {
-  char key[HDR_KEYSZ+1];
-  char val[HDR_VALSZ+1];
-  struct hdr_s* next;
-} hdr_t;
-
-// create a new header node
-hdr_t* hdr_new(char* key, char* val);
-// destroy the entire list of hdrs
-void hdr_free(hdr_t* hdrs);
 
 /**
  * @brief Parsed request header.
@@ -51,7 +33,6 @@ typedef struct {
   char version[REQ_VERSZ+1];
   // Commonly used headers
   char host[REQ_HOSTSZ+1];
-  char ctype[REQ_CTYPESZ+1];
   ssize_t clen;
   bool alive;
   // All other headers
@@ -74,16 +55,16 @@ req_t* req_new();
 void req_reset(req_t* req);
 // destroy a request
 void req_free(req_t* req);
-// insert a header into the header list
-void req_insert(req_t* req, hdr_t* hdr);
 
 /**
  * @brief Parse request header from buffer.
  * @param req The structured header that will be parsed from buf.
  * @param buf The raw buffer to be parsed from.
  * @return Size of buffer that is header.
- *         -1 if method is not supported.
- *         -2 if format is bad.
+ *         -status_code if failed to parse.
+ *         -400 if format is bad.
+ *         -501 method is not supported.
+ *         -411 if Content-Length is required but not provided.
  *
  * We assume that the header will be <= BUFSZ. Otherwise,
  * error will be returned.

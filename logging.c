@@ -14,8 +14,13 @@
 #include <time.h>
 #include "logging.h"
 
+#define DATESZ 64
+
 // file descriptor for the log
 static int fd;
+// line buffer
+static char line[LINESZ+1];
+static char wrapped[LINESZ+DATESZ+10];
 
 void log_init(char* fname) {
   fd = open(fname, O_WRONLY|O_CREAT|O_TRUNC, 0640);
@@ -24,13 +29,11 @@ void log_init(char* fname) {
 void prepare_datetime(char* datetime) {
   time_t t = time(NULL);
   struct tm tm = *localtime(&t);
-  strftime(datetime, DTSZ, "%X %a %x", &tm);
+  strftime(datetime, DATESZ, "%X %a %x", &tm);
 }
 
 void log_line(char* fmt, ...) {
-  char dt[DTSZ]; prepare_datetime(dt);
-  char line[LINESZ+1] = {0};
-  char wrapped[LINESZ+DTSZ+10] = {0};
+  char dt[DATESZ]; prepare_datetime(dt);
 
   va_list args;
   va_start(args, fmt);

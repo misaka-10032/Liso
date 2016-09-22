@@ -11,35 +11,9 @@
 #include "io.h"
 #include "utils.h"
 
-hdr_t* hdr_new(char* key, char* val) {
-  hdr_t* hdr = malloc(sizeof(hdr_t));
-  if (key)
-    strncpy0(hdr->key, key, HDR_KEYSZ);
-  else
-    hdr->key[0] = 0;
-  if (val)
-    strncpy0(hdr->val, val, HDR_VALSZ);
-  else
-    hdr->val[0] = 0;
-  hdr->next = NULL;
-  return hdr;
-}
-
-void hdr_free(hdr_t* hdr) {
-  if (!hdr)
-    return;
-
-  hdr_t* p = hdr;
-  while (p) {
-    hdr_t* q = p->next;
-    free(p);
-    p = q;
-  }
-}
-
 req_t* req_new() {
   req_t* req = malloc(sizeof(req_t));
-  req->hdrs = NULL;
+  req->hdrs = hdr_new(NULL, NULL);
   req_reset(req);
   return req;
 }
@@ -49,23 +23,16 @@ void req_reset(req_t* req) {
   req->uri[0] = 0;
   req->version[0] = 0;
   req->host[0] = 0;
-  req->ctype[0] = 0;
-  req->clen = 0;
+  req->clen = -1;
   req->rsize = 0;
   req->alive = true;
-  hdr_free(req->hdrs);
-  req->hdrs = hdr_new(NULL, NULL);
+  hdr_reset(req->hdrs);
   req->phase = REQ_START;
 }
 
 void req_free(req_t* req) {
   hdr_free(req->hdrs);
   free(req);
-}
-
-void req_insert(req_t* req, hdr_t* hdr) {
-  hdr->next = req->hdrs->next;
-  req->hdrs->next = hdr;
 }
 
 // Checks if it's a space except for \n.
@@ -125,8 +92,10 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
     log_line("[req_parse] Parsed method: %s", method);
 #endif
 
-    if (strlen(method) == 0)
-      return -2;
+    if (strlen(method) == 0) {
+      req->phase = REQ_ABORT;
+      return -400;  // malformed header
+    }
 
     if (!strncasecmp(method, "GET", 3) && issp(p[3]))
       req->method = M_GET;
@@ -138,7 +107,8 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
 #if DEBUG >= 1
       log_line("[req_parse] Method not supported: %s", method);
 #endif
-      return -1;
+      req->phase = REQ_ABORT;
+      return -501;  // method not supported
     }
 
     /* parse uri */
@@ -176,7 +146,7 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
       log_line("[req_parse] Met %c%c; \\r\\n expected.", p[-1], p[0]);
 #endif
       req->phase = REQ_ABORT;
-      return -2;
+      return -400;  // malformed header
     }
 
     buf->data_p++;
@@ -186,10 +156,23 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
   /******** phase HEADER ********/
   if (req->phase == REQ_HEADER) {
     while (buf->data_p < buf_end(buf)) {
+
       proceed_line();
+
+      /**** finished parsing ****/
       if (eol()) {
         buf->data_p++;
         req->phase = REQ_BODY;
+
+        if (req->clen < 0) {
+          if (req->method == M_POST) {
+            req->phase = REQ_ABORT;
+            return -411;  // clen needed
+          } else {
+            req->clen = 0;
+          }
+        }
+
         req->rsize = req->clen;
         break;
       }
@@ -203,7 +186,7 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
         log_line("[req_parse] No : is found.");
 #endif
         req->phase = REQ_ABORT;
-        return -2;
+        return -400;  // malformed header
       }
       strncpy0(key, p, min(HDR_KEYSZ, q-p));
       strncpy0(val, q+1, min(HDR_VALSZ, (char*) buf->data_p-q-1));
@@ -215,9 +198,6 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
       if (!strcasecmp(key, "Host")) {
         strcpy0(req->host, val);
 
-      } else if (!strcasecmp(key, "Content-Type")) {
-        strcpy0(req->ctype, val);
-
       } else if (!strcasecmp(key, "Content-Length")) {
         if (isnum(val))
           req->clen = atoi(val);
@@ -226,7 +206,7 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
           log_line("[req_parse] Invalid %s: %s", key, val);
 #endif
           req->phase = REQ_ABORT;
-          return -2;
+          return -400;  // malformed header
         }
 
       } else if (!strcasecmp(key, "Connection")) {
@@ -235,7 +215,7 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
         }
 
       } else {
-        req_insert(req, hdr_new(key, val));
+        hdr_insert(req->hdrs, hdr_new(key, val));
       }
 
       // move to new line

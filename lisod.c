@@ -41,12 +41,6 @@ static char* www_folder;
 // static char* prvkey_file;
 // static char* cert_file;
 
-static const char* default_pages[] = {
-  "index.html",
-  "index.htm"
-};
-#define n_default_pages (sizeof(default_pages) / sizeof(const char*))
-
 // close a socket
 int close_socket(int sock) {
   if (close(sock)) {
@@ -90,11 +84,13 @@ static void signal_handler(int sig) {
 }
 
 // recv error, prepare to respond error
-static void prepare_error_resp(conn_t* conn, int status) {
+// always return 1
+static int prepare_error_resp(conn_t* conn, int status) {
   conn->req->phase = REQ_ABORT;
   conn->resp->phase = RESP_ABORT;
   conn->resp->status = status;
   FD_SET(conn->fd, &pool->write_set);
+  return 1;
 }
 
 // switch from recv mode to send mode
@@ -106,59 +102,17 @@ static int liso_recv_to_send(conn_t* conn) {
   log_line("[recv_to_send] %d", conn->fd);
 #endif
 
-  int i;
-
   FD_CLR(conn->fd, &pool->read_set);
   FD_SET(conn->fd, &pool->write_set);
 
-  // sync Connection field
-  conn->resp->alive = conn->req->alive;
-
-  char path[REQ_URISZ*3];
-  strncpy0(path, www_folder, REQ_URISZ);
-  strncat(path, conn->req->uri, REQ_URISZ);
-#if DEBUG >= 1
-  log_line("[recv_to_send] path is %s", path);
-#endif
-
-  bool mmapped = resp_mmap(conn->resp, path) >= 0;
-
-  if (!mmapped) {
-
-    char* path_p = path + strlen(path);
-    if (path_p[-1] != '/')
-      *path_p++ = '/';
-
-    for (i = 0; i < n_default_pages; i++) {
-      strncpy0(path_p, default_pages[i], REQ_URISZ);
-#if DEBUG >= 1
-      log_line("[recv_to_send] try path %s", path);
-#endif
-      mmapped = resp_mmap(conn->resp, path) >= 0;
-      if (mmapped)
-        break;
-    }
-  }
-
-  if (!mmapped) {
-    prepare_error_resp(conn, 404);
-    return 1;
-  }
+  /* Try to build response */
+  if (!resp_build(conn->resp, conn->req, www_folder))
+    return prepare_error_resp(conn, conn->resp->status);
 
   /* prepare header */
   conn->resp->phase = RESP_HEADER;
   buf_reset(conn->buf);
   conn->buf->sz = resp_hdr(conn->resp, conn->buf->data);
-
-  /* prepare body */
-  // stealthily put some body into header buffer
-  if (conn->req->method != M_HEAD) {
-    ssize_t rsize = BUFSZ - conn->buf->sz;
-    ssize_t asize = min(rsize, conn->resp->clen);
-    memcpy(buf_end(conn->buf), conn->resp->mmbuf->data_p, asize);
-    conn->buf->sz += asize;
-    conn->resp->mmbuf->data_p += asize;
-  }
 
 #if DEBUG >= 2
   *(char*) buf_end(conn->buf) = 0;
@@ -259,20 +213,13 @@ static int liso_recv(conn_t* conn) {
       buf_free(buf_lines);
 
       // handle bad header
-      if (rc < 0) {
-        if (rc == -1) {
-          prepare_error_resp(conn, 501);
-        } else {
-          prepare_error_resp(conn, 400);
-        }
-        return 1;
-      }
+      if (rc < 0)
+        return prepare_error_resp(conn, -rc);
     }
   }
 
   if (conn->req->phase == REQ_BODY) {
     // TODO: stream body. effective data is [data_p, data+sz)
-    // TODO: do I really need Content-Length?
     ssize_t size = buf_end(conn->buf) - conn->buf->data_p;
     conn->req->rsize -= size;
     if (conn->req->rsize <= 0) {
@@ -528,7 +475,13 @@ int main(int argc, char* argv[]) {
     }
 
     /**** serve connections ****/
+
+    int max_fd = sock;
+
     for (i = 0; i < pool->n_conns; i++) {
+
+      max_fd = max(max_fd, pool->conns[i]->fd);
+
       int rc;
       rc = liso_recv(pool->conns[i]);
       if (rc < 0) {
@@ -537,8 +490,15 @@ int main(int argc, char* argv[]) {
         i -= 1;
         continue;
       }
+
       rc = liso_send(pool->conns[i]);
     }
+
+    // update max_fd
+    pool->max_fd = min(pool->max_fd, max_fd);
+#if DEBUG >= 1
+    log_line("[main loop] max fd is %d", pool->max_fd);
+#endif
   }
 
   teardown(EXIT_SUCCESS);

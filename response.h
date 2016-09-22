@@ -8,10 +8,9 @@
 #define RESPONSE_H
 
 #include "io.h"
+#include "request.h"
+#include "header.h"
 #include "utils.h"
-
-#define RESP_FTYPESZ 64
-#define RESP_DATESZ 64
 
 typedef struct resp_s {
   enum {
@@ -22,9 +21,9 @@ typedef struct resp_s {
     RESP_ERROR,  // prepared error, and in the middle of sending error
   } phase;
   int status;
-  char ftype[RESP_FTYPESZ+1];
   ssize_t clen;
   bool alive;
+  hdr_t* hdrs;
   buf_t* mmbuf;
 } resp_t;
 
@@ -36,18 +35,22 @@ void resp_free(resp_t* resp);
 void resp_reset(resp_t* resp);
 
 /**
- * @brief Memory map a static file to resp.
- * @param path The path to the static file.
- * @return Size of file.
- *         -1 if error occurs.
+ * @brief Build response from request.
+ * @param resp The response to build.
+ * @param req The request to be served.
+ * @param www The root static folder.
+ * @return  true if normal.
+ *         false if error occurs.
+ *
+ * Some fields in resp will be updated.
  */
-ssize_t resp_mmap(resp_t* resp, char* path);
+bool resp_build(resp_t* resp, const req_t* req, const char* www);
 
 /**
- * @brief Build header for response.
+ * @brief Serialize header for response.
  * @param resp The response to be built from.
  * @param hdr The header to be built.
- * @return Header size.
+ * @return Serialized header size.
  */
 ssize_t resp_hdr(const resp_t* resp, char* hdr);
 

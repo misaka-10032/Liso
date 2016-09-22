@@ -2,9 +2,14 @@
 !.gitignore
 !.vimrc.local
 
+*.pyc
+*.o
+
 tags
 build
+tmp
 run
 client
 lisod
 test_driver
+www
