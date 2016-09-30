@@ -17,13 +17,18 @@
 #define DATESZ 64
 
 // file descriptor for the log
-static int fd;
+static int fd = -1;
 // line buffer
 static char line[LINESZ+1];
 static char wrapped[LINESZ+DATESZ+10];
 
 void log_init(char* fname) {
-  fd = open(fname, O_WRONLY|O_CREAT|O_TRUNC, 0640);
+  if (fd < 0)
+    fd = open(fname, O_WRONLY|O_CREAT|O_TRUNC, 0640);
+}
+
+bool log_inited() {
+  return fd > 0;
 }
 
 void prepare_datetime(char* datetime) {

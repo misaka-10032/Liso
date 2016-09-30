@@ -9,11 +9,14 @@
 #define LOGGING_H
 
 #include "io.h"
+#include "utils.h"
 
 #define LINESZ BUFSZ
 
 // init logging
 void log_init(char* fname);
+// check if logging is inited
+bool log_inited();
 // log a new line
 void log_line(char* fmt, ...);
 // log an error line

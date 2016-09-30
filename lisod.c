@@ -11,6 +11,7 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <signal.h>
+#include <sys/stat.h>
 #include <sys/select.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -64,18 +65,72 @@ static int cleanup(conn_t* conn) {
 static void teardown(int rc) {
   close_socket(sock);
   pl_free(pool);
-  log_line("-------- Liso Server stops --------");
-  log_stop();
+  if (log_inited()) {
+    log_line("-------- Liso Server stops --------");
+    log_stop();
+  }
+  fprintf(stderr, "Lisod terminated with rc %d.\n", rc);
   exit(rc);
 }
 
 static void signal_handler(int sig) {
   switch (sig) {
-    case SIGINT:
+    case SIGHUP:
+      /* rehash the server */
+      break;
     case SIGTERM:
       teardown(EXIT_SUCCESS);
       break;
+    default:
+      break;
   }
+}
+
+// daemonize the process
+static int daemonize(char* lock_file) {
+  /* drop to having init() as parent */
+  int i, lfp, pid = fork();
+  char str[256] = {0};
+  if (pid < 0) exit(EXIT_FAILURE);
+  if (pid > 0) {
+    fflush(stdout);
+    fflush(stderr);
+    for (i = getdtablesize(); i >= 0; i--)
+      close(i);
+    exit(EXIT_SUCCESS);
+  }
+
+  setsid();
+
+  lfp = open(lock_file, O_RDWR|O_CREAT, 0640);
+
+  if (lfp < 0) {
+    fprintf(stderr, "Cannot open lock file.\n");
+    exit(EXIT_FAILURE); /* can not open */
+  }
+
+  if (lockf(lfp, F_TLOCK, 0) < 0) {
+    fprintf(stderr, "Cannot lock the lock file.\n");
+    exit(EXIT_FAILURE); /* can not lock */
+  }
+
+  /* only first instance continues */
+  pid = getpid();
+  sprintf(str, "%d\n", pid);
+  write(lfp, str, strlen(str)); /* record pid to lockfile */
+
+  signal(SIGCHLD, SIG_IGN); /* child terminate signal */
+  signal(SIGHUP, signal_handler); /* hangup signal */
+  signal(SIGTERM, signal_handler); /* software termination signal from kill */
+
+  printf("Successfully daemonized lisod, pid %d.\n", pid);
+
+  i = open("/dev/null", O_RDWR);
+  dup(i); /* stdout */
+  // TODO: dup stderr?
+  umask(027);
+
+  return EXIT_SUCCESS;
 }
 
 // recv error, prepare to respond error
@@ -386,20 +441,10 @@ int main(int argc, char* argv[]) {
   conf.prv = argv[7];
   conf.crt = argv[8];
 
-  /* setup signals */
-  // avoid crash when client continues to send after sock is closed.
-  signal(SIGPIPE, SIG_IGN);
-  // cgi shouldn't crash lisod.
-  signal(SIGCHLD, SIG_IGN);
-  signal(SIGTERM, signal_handler);
-  signal(SIGINT, signal_handler);
-
-  /* setup log */
-  log_init(conf.log);
-  log_line("-------- Liso Server starts --------");
-
   /* create listener socket */
   if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == -1) {
+    fprintf(stderr, "Failed creating listener socket. "
+                    "Server not started.\n");
     log_errln("Failed creating socket.");
     teardown(EXIT_FAILURE);
   }
@@ -412,19 +457,32 @@ int main(int argc, char* argv[]) {
   addr.sin_port = htons(conf.http_port);
   addr.sin_addr.s_addr = INADDR_ANY;
   if (bind(sock, (struct sockaddr *) &addr, sizeof(addr))) {
-    log_errln("Failed binding socket.");
+    fprintf(stderr, "Failed binding the port. "
+                    "Server not started.\n");
     teardown(EXIT_FAILURE);
   }
 
   if (listen(sock, 5)) {
-    log_errln("Error listening on socket.");
+    fprintf(stderr, "Error listening on socket. "
+                    "Server not started.\n");
     teardown(EXIT_FAILURE);
   }
+
+  // avoid crash when client continues to send after sock is closed.
+  signal(SIGPIPE, SIG_IGN);
+  // daemonize server
+  daemonize(conf.lock);
+
+  /* setup log */
+  log_init(conf.log);
+  log_line("-------- Liso Server starts --------");
 
   /******** main loop ********/
   while (1) {
 
+    // get pool ready
     pl_ready(pool);
+
     /* select those who are ready */
     if ((pool->n_ready = select(pool->max_fd+1,
                                 &pool->read_ready,

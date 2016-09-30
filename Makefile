@@ -57,6 +57,9 @@ run: all
 	./$(SRV) 10032 443 $(RUN)/log $(RUN)/lock www \
 		$(RUN)/cgi $(RUN)/prv $(RUN)/cert
 
+stop:
+	killall $(SRV)
+
 # TODO: valgrind gets stuck
 #valgrind: all
 #	valgrind ./$(SRV) 10032 443 $(RUN)/log $(RUN)/lock $(RUN)/www \
@@ -86,4 +89,4 @@ clean:
 	@rm -rf $(BUILD) $(RUN)/log www $(SRV) $(CLI) $(TEST) \
 		tags *.dSYM
 
-.PHONY: pre tags all clean run test*
+.PHONY: pre tags all clean run stop test*
