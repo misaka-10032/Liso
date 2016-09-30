@@ -1,6 +1,6 @@
 /**
  * @file config.h
- * @brief TODO
+ * @brief Global configurations.
  * @author Longqi Cai <longqic@andrew.cmu.edu>
  */
 

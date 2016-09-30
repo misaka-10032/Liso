@@ -180,7 +180,7 @@ static ssize_t resp_mmap(resp_t* resp, const char* path,
   return st->st_size;
 }
 
-bool resp_build(resp_t* resp, const req_t* req, const char* www) {
+bool resp_build(resp_t* resp, const req_t* req, const conf_t* conf) {
 
   struct stat st;
 
@@ -189,7 +189,7 @@ bool resp_build(resp_t* resp, const req_t* req, const char* www) {
 
   // try several paths
   char path[REQ_URISZ*3];
-  strncpy0(path, www, REQ_URISZ);
+  strncpy0(path, conf->www, REQ_URISZ);
   strncat(path, req->uri, REQ_URISZ);
 #if DEBUG >= 1
   log_line("[recv_to_send] path is %s", path);

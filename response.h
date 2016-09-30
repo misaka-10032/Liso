@@ -11,6 +11,7 @@
 #include "request.h"
 #include "header.h"
 #include "utils.h"
+#include "config.h"
 
 typedef struct resp_s {
   enum {
@@ -38,13 +39,13 @@ void resp_reset(resp_t* resp);
  * @brief Build response from request.
  * @param resp The response to build.
  * @param req The request to be served.
- * @param www The root static folder.
+ * @param conf The global configuration.
  * @return  true if normal.
  *         false if error occurs.
  *
  * Some fields in resp will be updated.
  */
-bool resp_build(resp_t* resp, const req_t* req, const char* www);
+bool resp_build(resp_t* resp, const req_t* req, const conf_t* conf);
 
 /**
  * @brief Serialize header for response.

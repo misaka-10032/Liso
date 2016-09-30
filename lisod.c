@@ -3,7 +3,8 @@
  * @brief Entry for the Liso server.
  * @author Longqi Cai <longqic@andrew.cmu.edu>
  *
- * TODO This is a select-based server.
+ * This is a select-based server, running as daemon.
+ * It serves static pages, and support cgi scripts.
  *
  */
 
@@ -23,6 +24,7 @@
 #include "response.h"
 #include "logging.h"
 #include "io.h"
+#include "config.h"
 #include "utils.h"
 
 // global listener socket
@@ -32,14 +34,7 @@ static pool_t* pool;
 
 // global arguments
 static const int ARG_CNT = 8;
-static int http_port;
-// static int https_port;
-static char* log_file;
-// static char* lock_file;
-static char* www_folder;
-// static char* cgi_path;
-// static char* prvkey_file;
-// static char* cert_file;
+static conf_t conf;
 
 // close a socket
 int close_socket(int sock) {
@@ -106,7 +101,7 @@ static int liso_recv_to_send(conn_t* conn) {
   FD_SET(conn->fd, &pool->write_set);
 
   /* Try to build response */
-  if (!resp_build(conn->resp, conn->req, www_folder))
+  if (!resp_build(conn->resp, conn->req, &conf))
     return prepare_error_resp(conn, conn->resp->status);
 
   /* prepare header */
@@ -382,14 +377,14 @@ int main(int argc, char* argv[]) {
     return EXIT_FAILURE;
   }
 
-  http_port = atoi(argv[1]);
-//  https_port = atoi(argv[2]);
-  log_file = argv[3];
-//  lock_file = argv[4];
-  www_folder = argv[5];
-//  cgi_path = argv[6];
-//  prvkey_file = argv[7];
-//  cert_file = argv[8];
+  conf.http_port = atoi(argv[1]);
+  conf.https_port = atoi(argv[2]);
+  conf.log = argv[3];
+  conf.lock = argv[4];
+  conf.www = argv[5];
+  conf.cgi = argv[6];
+  conf.prv = argv[7];
+  conf.crt = argv[8];
 
   /* setup signals */
   // avoid crash when client continues to send after sock is closed.
@@ -400,7 +395,7 @@ int main(int argc, char* argv[]) {
   signal(SIGINT, signal_handler);
 
   /* setup log */
-  log_init(log_file);
+  log_init(conf.log);
   log_line("-------- Liso Server starts --------");
 
   /* create listener socket */
@@ -414,7 +409,7 @@ int main(int argc, char* argv[]) {
 
   /* bind port */
   addr.sin_family = AF_INET;
-  addr.sin_port = htons(http_port);
+  addr.sin_port = htons(conf.http_port);
   addr.sin_addr.s_addr = INADDR_ANY;
   if (bind(sock, (struct sockaddr *) &addr, sizeof(addr))) {
     log_errln("Failed binding socket.");
