@@ -8,6 +8,7 @@
 #include <assert.h>
 #include <sys/mman.h>
 #include "io.h"
+#include "logging.h"
 #include "utils.h"
 
 buf_t* buf_new() {
@@ -46,8 +47,8 @@ buf_t* mmbuf_new(int fd, size_t sz) {
   mmbuf->data_p = mmbuf->data;
 
   if (mmbuf->data == MAP_FAILED) {
-    fprintf(stderr, "[mmbuf_new] mmap failed on %d: %s\n",
-            fd, strerror(errno));
+    log_errln("[mmbuf_new] mmap failed on %d: %s",
+              fd, strerror(errno));
     errno = 0;
     free(mmbuf);
     return NULL;

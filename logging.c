@@ -41,7 +41,18 @@ void log_line(char* fmt, ...) {
   va_end(args);
 
   sprintf(wrapped, "%s - %s\n", dt, line);
-  printf("%s", wrapped);
+  write(fd, wrapped, strlen(wrapped));
+}
+
+void log_errln(char* fmt, ...) {
+  char dt[DATESZ]; prepare_datetime(dt);
+
+  va_list args;
+  va_start(args, fmt);
+  vsprintf(line, fmt, args);
+  va_end(args);
+
+  sprintf(wrapped, "%s !!! ERROR !!! %s\n", dt, line);
   write(fd, wrapped, strlen(wrapped));
 }
 

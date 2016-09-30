@@ -16,6 +16,8 @@
 void log_init(char* fname);
 // log a new line
 void log_line(char* fmt, ...);
+// log an error line
+void log_errln(char* fmt, ...);
 // stop logging
 void log_stop();
 

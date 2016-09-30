@@ -16,6 +16,7 @@
 #include "io.h"
 #include "utils.h"
 #include "logging.h"
+#include "config.h"
 
 /**** Special responses ****/
 
@@ -251,8 +252,7 @@ ssize_t resp_hdr(const resp_t* resp, char* hdr) {
   sprintf(hdr_p, "Date: %s\r\n", date);
   hdr_p += strlen(hdr_p);
 
-  // TODO: global version
-  strcpy0(hdr_p, "Server: Liso/1.0\r\n");
+  sprintf(hdr_p, "Server: %s\r\n", VERSION);
   hdr_p += strlen(hdr_p);
 
   sprintf(hdr_p, "Connection: %s\r\n", resp->alive ? "keep-alive" : "close");
@@ -282,7 +282,7 @@ const char* resp_title(int code) {
     case 501: return title501;
     case 503: return title503;
     default:
-      fprintf(stderr, "Status Code(%d) undefined.\n", code);
+      log_errln("Status Code(%d) undefined.", code);
       return title500;
   }
 }
@@ -295,7 +295,7 @@ const char* resp_msg(int code) {
     case 501: return msg501;
     case 503: return msg503;
     default:
-      fprintf(stderr, "Status Code(%d) undefined.\n", code);
+      log_errln("Status Code(%d) undefined.", code);
       return msg500;
   }
 }

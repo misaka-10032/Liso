@@ -44,7 +44,7 @@ static char* www_folder;
 // close a socket
 int close_socket(int sock) {
   if (close(sock)) {
-    fprintf(stderr, "Failed closing socket %d.\n", sock);
+    log_errln("Failed closing socket %d.", sock);
     return 1;
   }
   return 0;
@@ -60,7 +60,7 @@ static int cleanup(conn_t* conn) {
   setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
   close_socket(conn->fd);
   if (pl_del_conn(pool, conn) < 0) {
-    fprintf(stderr, "Error deleting connection.\n");
+    log_errln("Error deleting connection.");
   }
   return -1;
 }
@@ -165,7 +165,7 @@ static int liso_recv(conn_t* conn) {
   if (dsize < 0) {
     conn->req->phase = REQ_ABORT;
     cleanup(conn);
-    fprintf(stderr, "Error in recv: %s\n", strerror(errno));
+    log_errln("Error in recv: %s", strerror(errno));
     errno = 0;
     return -1;
   }
@@ -289,7 +289,7 @@ static int liso_handle_error(conn_t* conn) {
   ssize_t rc = send(conn->fd, buf->data_p, rsize, 0);
 
   if (rc <= 0) {
-    fprintf(stderr, "Error sending error msg.\n");
+    log_errln("Error sending error msg.");
     return cleanup(conn);
   }
 
@@ -405,7 +405,7 @@ int main(int argc, char* argv[]) {
 
   /* create listener socket */
   if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == -1) {
-    fprintf(stderr, "Failed creating socket.\n");
+    log_errln("Failed creating socket.");
     teardown(EXIT_FAILURE);
   }
 
@@ -417,12 +417,12 @@ int main(int argc, char* argv[]) {
   addr.sin_port = htons(http_port);
   addr.sin_addr.s_addr = INADDR_ANY;
   if (bind(sock, (struct sockaddr *) &addr, sizeof(addr))) {
-    fprintf(stderr, "Failed binding socket.\n");
+    log_errln("Failed binding socket.");
     teardown(EXIT_FAILURE);
   }
 
   if (listen(sock, 5)) {
-    fprintf(stderr, "Error listening on socket.\n");
+    log_errln("Error listening on socket.");
     teardown(EXIT_FAILURE);
   }
 
@@ -435,7 +435,7 @@ int main(int argc, char* argv[]) {
                                 &pool->read_ready,
                                 &pool->write_ready,
                                 NULL, NULL)) == -1) {
-      fprintf(stderr, "Error in select.\n");
+      log_errln("Error in select.");
       continue;
     }
 #if DEBUG >= 2
@@ -447,7 +447,7 @@ int main(int argc, char* argv[]) {
       cli_size = sizeof(cli_addr);
       if ((client_sock = accept(sock, (struct sockaddr *) &cli_addr,
                                 &cli_size)) == -1) {
-        fprintf(stderr, "Error in accept: %s\n", strerror(errno));
+        log_errln("Error in accept: %s", strerror(errno));
         errno = 0;
         continue;
       }
@@ -460,7 +460,7 @@ int main(int argc, char* argv[]) {
       fcntl(client_sock, F_SETFL, O_NONBLOCK);
 
       if (pool->n_conns == MAX_CONNS) {
-        fprintf(stderr, "Max conns reached; drop client %d.\n", client_sock);
+        log_errln("Max conns reached; drop client %d.", client_sock);
         close_socket(client_sock);
         continue;
       }
@@ -469,7 +469,7 @@ int main(int argc, char* argv[]) {
       conn_t* conn = cn_new(client_sock, pool->n_conns);
 
       if (pl_add_conn(pool, conn) < 0) {
-        fprintf(stderr, "Error adding connection.\n");
+        log_errln("Error adding connection.");
         continue;
       }
     }
