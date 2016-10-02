@@ -61,8 +61,32 @@ static int cleanup(conn_t* conn) {
   return -1;
 }
 
+// reset req/resp or recycle them.
+// always return 1 indicating no mistake.
+static int liso_reset_or_recycle(conn_t* conn) {
+  if (!conn->resp->alive) {
+    return cleanup(conn);
+  }
+
+  FD_SET(conn->fd, &pool->read_set);
+  FD_CLR(conn->fd, &pool->write_set);
+
+  if (conn->cgi->srv_in > 0)
+    FD_CLR(conn->cgi->srv_in, &pool->read_set);
+
+  if (conn->cgi->srv_out > 0)
+    FD_CLR(conn->cgi->srv_out, &pool->write_set);
+
+  buf_reset(conn->buf);
+  req_reset(conn->req);
+  resp_reset(conn->resp);
+  cgi_reset(conn->cgi);
+
+  return 1;
+}
+
 // tear down the server
-static void teardown(int rc) {
+static int teardown(int rc) {
   close_socket(sock);
   pl_free(pool);
   if (log_inited()) {
@@ -71,6 +95,8 @@ static void teardown(int rc) {
   }
   fprintf(stderr, "Lisod terminated with rc %d.\n", rc);
   exit(rc);
+  // don't return though
+  return rc;
 }
 
 static void signal_handler(int sig) {
@@ -143,13 +169,13 @@ static int prepare_error_resp(conn_t* conn, int status) {
   return 1;
 }
 
-// switch from recv mode to send mode
-// called only when recv succeeds
+// switch from recv mode to send mode for static pages
+// called only when request is totally recv'ed
 // returns -1 if conn is cleaned up
 //          1 if normal.
-static int liso_recv_to_send(conn_t* conn) {
+static int liso_prepare_static(conn_t* conn) {
 #if DEBUG >= 1
-  log_line("[recv_to_send] %d", conn->fd);
+  log_line("[prepare_static] %d", conn->fd);
 #endif
 
   FD_CLR(conn->fd, &pool->read_set);
@@ -164,11 +190,91 @@ static int liso_recv_to_send(conn_t* conn) {
   buf_reset(conn->buf);
   conn->buf->sz = resp_hdr(conn->resp, conn->buf->data);
 
+#if DEBUG >= 1
+  log_line("[recv_to_send] Serving static page for %d.", conn->fd);
+#endif
+
 #if DEBUG >= 2
   *(char*) buf_end(conn->buf) = 0;
-  log_line("[resp_hdr] response header for %d is\n%s",
+  log_line("[recv_to_send] response header for %d is\n%s",
            conn->fd, conn->buf->data);
 #endif
+
+  return 1;
+}
+
+// stream request body to cgi program
+// called only when header is totally recv'ed
+// body waits to be recv'ed at this point
+// returns -1 if conn is cleaned up
+//          1 if normal.
+static int liso_stream_to_cgi(conn_t* conn) {
+
+  if (conn->cgi->phase == CGI_READY) {
+
+    if (!cgi_init(conn->cgi, conn->req, &conf)) {
+      conn->cgi->phase = CGI_ABORT;
+      conn->resp->phase = RESP_ABORT;
+      conn->resp->status = 500;
+      return prepare_error_resp(conn, conn->resp->status);
+    }
+
+    FD_SET(conn->cgi->srv_out, &pool->write_set);
+    FD_SET(conn->cgi->srv_in, &pool->read_set);
+  }
+
+  ssize_t rsize = buf_end(conn->buf) - conn->buf->data_p;
+  while (rsize > 0) {
+    ssize_t sz = write(conn->cgi->srv_out, conn->buf->data_p, rsize);
+    if (sz <= 0)
+      return prepare_error_resp(conn, 500);
+    rsize -= sz;
+  }
+
+  return 1;
+}
+
+// stream response from cgi program
+// mark DONE if streaming is finished
+// returns -1 if conn is cleaned up
+//          1 if normal.
+static int liso_stream_from_cgi(conn_t* conn) {
+
+  conn->buf->sz = read(conn->cgi->srv_in, conn->buf->data, BUFSZ);
+
+  if (conn->buf->sz < 0) {
+    conn->cgi->phase = CGI_ABORT;
+    return prepare_error_resp(conn, 500);
+  }
+
+  if (conn->buf->sz == 0)
+    conn->cgi->phase = CGI_DONE;
+
+  return 1;
+}
+
+// serve dynamic content to conn
+// assumes buf_phase of SEND
+// toggle buf_phase to be RECV if finished sending
+// reset or recycle if CGI also finishes
+// returns -1 if conn is cleaned up.
+//          1 if normal.
+static int liso_serve_dynamic(conn_t* conn) {
+  buf_t* buf = conn->buf;
+  ssize_t rsize = buf_end(buf) - buf->data_p;
+  ssize_t rc = send(conn->fd, buf->data_p, rsize, 0);
+
+  if (rc <= 0) {
+    return cleanup(conn);
+  }
+
+  rsize -= rc;
+  if (rsize == 0) {
+    if (conn->cgi->buf_phase == BUF_DONE)
+      return liso_reset_or_recycle(conn);
+    else
+      conn->cgi->buf_phase = BUF_RECV;
+  }
 
   return 1;
 }
@@ -189,12 +295,8 @@ static int recv_abort(conn_t* conn) {
 
 // recv from conn
 // returns -1 if fatal error occurs, conn cleaned up.
-//          0 if not ready, may still needs send.
 //          1 if normal.
 static int liso_recv(conn_t* conn) {
-
-  if (!FD_ISSET(conn->fd, &pool->read_ready))
-    return 0;
 
   // ignore the aborted ones
   if (conn->req->phase == REQ_ABORT) {
@@ -269,7 +371,12 @@ static int liso_recv(conn_t* conn) {
   }
 
   if (conn->req->phase == REQ_BODY) {
-    // TODO: stream body. effective data is [data_p, data+sz)
+    if (conn->req->type == REQ_STATIC)
+      conn->cgi->phase = CGI_DISABLED;
+    else
+      conn->resp->phase = RESP_DISABLED;
+
+    // effective data is [data_p, data+sz)
     ssize_t size = buf_end(conn->buf) - conn->buf->data_p;
     conn->req->rsize -= size;
     if (conn->req->rsize <= 0) {
@@ -279,32 +386,14 @@ static int liso_recv(conn_t* conn) {
     buf_reset(conn->buf);
   }
 
-  if (conn->req->phase == REQ_DONE) {
 #if DEBUG >= 2
+  if (conn->req->phase == REQ_DONE) {
     buf_t* dump = buf_new();
     req_pack(conn->req, dump);
     log_line("[main loop] parsed req\n%s", dump->data);
     buf_free(dump);
+  }
 #endif
-    // change mode
-    return liso_recv_to_send(conn);
-  }
-
-  return 1;
-}
-
-// reset req/resp or recycle them.
-// always return 1 indicating no mistake.
-static int liso_reset_or_recycle(conn_t* conn) {
-  if (!conn->resp->alive) {
-    return cleanup(conn);
-  }
-
-  buf_reset(conn->buf);
-  req_reset(conn->req);
-  resp_reset(conn->resp);
-  FD_SET(conn->fd, &pool->read_set);
-  FD_CLR(conn->fd, &pool->write_set);
 
   return 1;
 }
@@ -349,14 +438,10 @@ static int liso_handle_error(conn_t* conn) {
   return 1;
 }
 
-// send to conn
+// serve static content to conn
 // returns -1 if conn is cleaned up.
-//         0  if not ready.
 //         1  if normal.
-static int liso_send(conn_t* conn) {
-
-  if (!FD_ISSET(conn->fd, &pool->write_ready))
-    return 0;
+static int liso_serve_static(conn_t* conn) {
 
   if (conn->resp->phase == RESP_ABORT)
     liso_prepare_error_page(conn);
@@ -401,7 +486,10 @@ static int liso_send(conn_t* conn) {
 
     if (rc <= 0) {
 #if DEBUG >= 1
-      log_line("[liso_send] Error when sending to %d.", conn->fd);
+      if (rc < 0)
+        log_line("[liso_send] Error when sending to %d.", conn->fd);
+      else
+        log_line("[liso_send] Finished sending to %d.", conn->fd);
 #endif
       return cleanup(conn);
     }
@@ -533,18 +621,77 @@ int main(int argc, char* argv[]) {
 
     for (i = 0; i < pool->n_conns; i++) {
 
-      max_fd = max(max_fd, pool->conns[i]->fd);
+      conn_t* conn = pool->conns[i];
 
-      int rc;
-      rc = liso_recv(pool->conns[i]);
-      if (rc < 0) {
-        // the fatal conn is cleaned up and the last one replaces it.
-        // go back and forward to process the new connection
-        i -= 1;
-        continue;
+      /* recv */
+      if (FD_ISSET(conn->fd, &pool->read_ready)) {
+        if (liso_recv(conn) < 0) {
+          // the fatal conn is cleaned up and the last one replaces it.
+          // go back and forward to process the new connection.
+          i -= 1;
+          continue;
+        }
       }
 
-      rc = liso_send(pool->conns[i]);
+      /* transitions */
+
+      if (conn->req->phase == REQ_DONE &&
+          conn->resp->phase == RESP_READY) {
+        // only prepare once
+        liso_prepare_static(conn);
+      }
+
+      if (conn->req->phase == REQ_BODY &&
+          conn->req->type == REQ_DYNAMIC) {
+        // assumes we can stream conn->buf->data_p
+        // to pipe very fast
+        liso_stream_to_cgi(conn);
+      }
+
+      if (conn->req->phase == REQ_DONE &&
+          conn->req->type == REQ_DYNAMIC) {
+        // cgi stream out/in transition
+        liso_stream_to_cgi(conn);
+        close_pipe(&conn->cgi->srv_out);
+        conn->cgi->phase = CGI_CGI_TO_SRV;
+        FD_SET(conn->cgi->srv_in, &pool->read_set);
+      }
+
+      /* serve */
+
+      if (conn->req->type == REQ_DYNAMIC &&
+          conn->cgi->phase == CGI_CGI_TO_SRV) {
+
+        if (FD_ISSET(conn->cgi->srv_in, &pool->read_ready) &&
+            conn->cgi->buf_phase == BUF_RECV) {
+          liso_stream_from_cgi(conn);
+        }
+
+        if (FD_ISSET(conn->fd, &pool->write_ready) &&
+            conn->cgi->buf_phase == BUF_SEND) {
+          if (liso_serve_dynamic(conn) < 0) {
+            i -= 1;
+            continue;
+          }
+        }
+      }
+
+      if (FD_ISSET(conn->fd, &pool->write_ready) &&
+          conn->resp->phase != RESP_DISABLED) {
+        // serves several cases
+        // 1. serving static request
+        // 2. bad request
+        // 3. cgi error
+        if (liso_serve_static(conn) < 0) {
+          i -= 1;
+          continue;
+        }
+      }
+
+      /* maintain max_fd */
+      max_fd = max(max_fd, conn->fd);
+      max_fd = max(max_fd, conn->cgi->srv_in);
+      max_fd = max(max_fd, conn->cgi->srv_out);
     }
 
     // update max_fd
@@ -554,5 +701,5 @@ int main(int argc, char* argv[]) {
 #endif
   }
 
-  teardown(EXIT_SUCCESS);
+  return teardown(EXIT_SUCCESS);
 }

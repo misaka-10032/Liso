@@ -56,3 +56,7 @@ bool caseendswith(const char* str, const char* suffix) {
 
   return strncasecmp(str+l_str-l_suffix, suffix, l_suffix) == 0;
 }
+
+bool strstartswith(const char* str, const char* prefix) {
+  return !strncmp(str, prefix, strlen(prefix));
+}

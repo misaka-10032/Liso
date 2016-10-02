@@ -34,7 +34,9 @@ bool isnum(char* str);
 char* strncpy0(char* d, const char* s, size_t n);
 // strcpy with \0 at end
 char* strcpy0(char* d, const char* s);
-// check if str ends with suffix
+// check if str ends with suffix, case insensitive
 bool caseendswith(const char* str, const char* suffix);
+// check if str starts with prefix
+bool strstartswith(const char* str, const char* prefix);
 
 #endif // UTILS_H

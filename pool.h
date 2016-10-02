@@ -14,6 +14,7 @@
 #include <sys/select.h>
 #include "request.h"
 #include "response.h"
+#include "cgi.h"
 #include "io.h"
 
 #define MAX_CONNS (FD_SETSIZE - 10)
@@ -28,6 +29,8 @@ typedef struct {
   req_t* req;
   // Response
   resp_t* resp;
+  // CGI
+  cgi_t* cgi;
   // Buffer for the connection
   buf_t* buf;
 } conn_t;

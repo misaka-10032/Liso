@@ -32,6 +32,7 @@ pre:
 	@mkdir -p $(BUILD) $(RUN)
 	@rm -rf www
 	@ln -sf test/cp2/www .
+	@FLASK_APP=flaskr.flaskr flask initdb
 
 tags:
 	@ctags -R --exclude=.git --exclude=$(BUILD) --exclude=$(RUN) \
@@ -55,7 +56,7 @@ $(BUILD)/%.o: %.c
 
 run: all
 	./$(SRV) 10032 443 $(RUN)/log $(RUN)/lock www \
-		$(RUN)/cgi $(RUN)/prv $(RUN)/cert
+		flaskr sslkey.key sslcrt.crt
 
 stop:
 	killall $(SRV)
@@ -87,6 +88,6 @@ test: test0 test1
 
 clean:
 	@rm -rf $(BUILD) $(RUN)/log www $(SRV) $(CLI) $(TEST) \
-		tags *.dSYM
+		flastr/flaskr.db tags *.dSYM
 
 .PHONY: pre tags all clean run stop test*

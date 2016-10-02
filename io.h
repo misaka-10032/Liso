@@ -41,4 +41,12 @@ buf_t* mmbuf_new(int fd, size_t sz);
 // destroy a mmbuf
 void mmbuf_free(buf_t* buf);
 
+// TODO: delete
+///* sdbuf is buf that doesn't hold data.
+//   it only holds pointers. */
+//// constructor for shadow buffer
+//buf_t* sdbuf_new(buf_t* buf);
+//// destroy a sdbuf
+//void sdbuf_free(buf_t* buf);
+
 #endif // IO_H

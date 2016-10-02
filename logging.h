@@ -2,7 +2,8 @@
  * @file logging.h
  * @brief Provides logging related functions.
  * @author Longqi Cai <longqic@andrew.cmu.edu>
- * @bug This module is NOT thread safe.
+ *
+ * Supports mutex for log_line and log_errln.
  */
 
 #ifndef LOGGING_H

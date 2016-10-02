@@ -20,7 +20,9 @@ req_t* req_new() {
 
 void req_reset(req_t* req) {
   req->method = M_OTHER;
+  req->scheme = HTTP;
   req->uri[0] = 0;
+  req->params = NULL;
   req->version[0] = 0;
   req->host[0] = 0;
   req->clen = -1;
@@ -28,6 +30,7 @@ void req_reset(req_t* req) {
   req->alive = true;
   hdr_reset(req->hdrs);
   req->phase = REQ_START;
+  req->type = REQ_STATIC;
 }
 
 void req_free(req_t* req) {
@@ -131,6 +134,15 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
       strncpy0(req->host, host_start, host_end-host_start);
       strcpy0(req->uri, host_end);
     }
+
+    // check cgi
+    if (strstartswith(req->uri, "/cgi/"))
+      req->type = REQ_DYNAMIC;
+
+    // separate uri and params
+    req->params = strchr(req->uri, '?');
+    if (req->params)
+      *req->params++ = 0;
 
     /* parse version */
     proceed_inline();
@@ -280,4 +292,18 @@ ssize_t req_pack(req_t* req, buf_t* buf) {
   buf->sz = buf->data_p - buf->data;
   buf->data_p = buf->data;
   return buf->sz;
+}
+
+const char* req_method(const req_t* req) {
+  switch(req->method) {
+    case M_GET:
+      return "GET";
+    case M_HEAD:
+      return "HEAD";
+    case M_POST:
+      return "POST";
+    case M_OTHER:
+      return "OTHER";
+  }
+  return NULL;
 }

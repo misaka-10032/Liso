@@ -11,7 +11,7 @@
 #include "header.h"
 #include "utils.h"
 
-#define REQ_URISZ 256
+#define REQ_URISZ 2048
 #define REQ_VERSZ 32
 #define REQ_HOSTSZ 256
 #define REQ_CTYPESZ 64
@@ -20,23 +20,38 @@
  * @brief Parsed request header.
  *
  * Payload is not included, because it may be too large.
- * It will directly be streamed to CGI that needs it.
+ * It will directly be piped to CGI that needs it.
  */
 typedef struct {
+
+  // Request line
   enum {
     M_GET=1,
     M_HEAD,
     M_POST,
     M_OTHER
   } method;
-  char uri[REQ_URISZ+1];
   char version[REQ_VERSZ+1];
+
+  // Scheme
+  enum {
+    HTTP=1,
+    HTTPS,
+  } scheme;
+
+  char uri[REQ_URISZ+1];
+  // Params is pointer in uri
+  // They will be separated by \0
+  char* params;
+
   // Commonly used headers
   char host[REQ_HOSTSZ+1];
   ssize_t clen;
   bool alive;
+
   // All other headers
   hdr_t* hdrs;
+
   // Remained content length
   ssize_t rsize;
   // Phase of parsing
@@ -47,6 +62,12 @@ typedef struct {
     REQ_DONE,
     REQ_ABORT,
   } phase;
+
+  // Type of request
+  enum {
+    REQ_STATIC=1,
+    REQ_DYNAMIC=2,
+  } type;
 } req_t;
 
 // create an empty request
@@ -55,6 +76,8 @@ req_t* req_new();
 void req_reset(req_t* req);
 // destroy a request
 void req_free(req_t* req);
+// method in str
+const char* req_method(const req_t* req);
 
 /**
  * @brief Parse request header from buffer.

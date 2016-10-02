@@ -28,9 +28,16 @@ void test_isnum() {
   assert(!isnum("92x"));
 }
 
+void test_strstartswith() {
+  assert(strstartswith("abc", "a"));
+  assert(!strstartswith("b", "bc"));
+  assert(!strstartswith("bc", "cd"));
+}
+
 int main() {
   test_strstrip();
   test_isnum();
+  test_strstartswith();
   printf("[test_driver] Passed!\n");
   return 0;
 }
