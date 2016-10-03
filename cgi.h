@@ -22,8 +22,9 @@ typedef struct {
     CGI_DISABLED,
   } phase;
 
-  int srv_out, srv_in;
-  int cgi_in, cgi_out;
+  int pid;
+  int srv_out, srv_in, srv_err;
+  int cgi_in, cgi_out, cgi_err;
 
   enum {
     BUF_RECV=1,
@@ -35,6 +36,7 @@ cgi_t* cgi_new();
 void cgi_free(cgi_t* cgi);
 void cgi_reset(cgi_t* cgi);
 bool cgi_init(cgi_t* cgi, const req_t* req, const conf_t* conf);
+void cgi_logerr(cgi_t* cgi);
 void close_pipe(int* fd);
 
 #endif // CGI_H

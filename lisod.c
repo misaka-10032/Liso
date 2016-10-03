@@ -71,9 +71,14 @@ static int liso_reset_or_recycle(conn_t* conn) {
   FD_SET(conn->fd, &pool->read_set);
   FD_CLR(conn->fd, &pool->write_set);
 
-  if (conn->cgi->srv_in > 0) {
+  if (conn->cgi->srv_in >= 0) {
     FD_CLR(conn->cgi->srv_in, &pool->read_set);
     close_pipe(&conn->cgi->srv_in);
+  }
+
+  if (conn->cgi->srv_err >= 0) {
+    FD_CLR(conn->cgi->srv_err, &pool->read_set);
+    close_pipe(&conn->cgi->srv_err);
   }
 
   buf_reset(conn->buf);
@@ -135,14 +140,6 @@ static int daemonize(char* lock_file) {
 
   printf("Successfully daemonized lisod, pid %d.\n", pid);
 
-  // close stdin/out for pipe
-  close(STDIN_FILENO);
-  close(STDOUT_FILENO);
-  // TODO: stderr
-
-  open("/dev/null", O_RDONLY); /* stub stdin */
-  open("/dev/null", O_WRONLY); /* stub stdout */
-
   umask(027);
   lfp = open(lock_file, O_RDWR|O_CREAT, 0640);
 
@@ -159,6 +156,12 @@ static int daemonize(char* lock_file) {
   /* only first instance continues */
   sprintf(str, "%d\n", pid);
   write(lfp, str, strlen(str)); /* record pid to lockfile */
+
+  // close stdin/out for pipe
+  close(STDIN_FILENO);
+  close(STDOUT_FILENO);
+  open("/dev/null", O_RDONLY); /* stub stdin */
+  open("/dev/null", O_WRONLY); /* stub stdout */
 
   return EXIT_SUCCESS;
 }
@@ -208,6 +211,7 @@ static int liso_prepare_static_header(conn_t* conn) {
 static void liso_init_cgi(conn_t* conn) {
   if (cgi_init(conn->cgi, conn->req, &conf)) {
     conn->cgi->phase = CGI_SRV_TO_CGI;
+    FD_SET(conn->cgi->srv_err, &pool->read_set);
   } else {
     conn->cgi->phase = CGI_ABORT;
     conn->resp->phase = RESP_ABORT;
@@ -662,6 +666,12 @@ int main(int argc, char* argv[]) {
         }
       }
 
+      // handle cgi err
+      if (conn->cgi->srv_err >= 0 &&
+          FD_ISSET(conn->cgi->srv_err, &pool->read_ready)) {
+        cgi_logerr(conn->cgi);
+      }
+
       /* transitions */
 
       if (conn->req->type == REQ_STATIC &&
@@ -743,6 +753,7 @@ int main(int argc, char* argv[]) {
       /* maintain max_fd */
       max_fd = max(max_fd, conn->fd);
       max_fd = max(max_fd, conn->cgi->srv_in);
+      max_fd = max(max_fd, conn->cgi->srv_err);
     }
 
     // update max_fd

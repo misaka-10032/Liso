@@ -10,6 +10,7 @@
 
 #define ENVP_CNT 64
 #define ENVSZ 2048
+#define ERRSZ 2048
 
 cgi_t* cgi_new() {
   cgi_t* cgi = malloc(sizeof(cgi_t));
@@ -41,6 +42,8 @@ void cgi_reset(cgi_t* cgi) {
   close_pipe(&cgi->srv_in);
   close_pipe(&cgi->cgi_in);
   close_pipe(&cgi->cgi_out);
+  close_pipe(&cgi->srv_err);
+  close_pipe(&cgi->cgi_err);
 
   cgi->buf_phase = BUF_RECV;
 }
@@ -138,46 +141,47 @@ bool cgi_init(cgi_t* cgi, const req_t* req, const conf_t* conf) {
 
   int stdin_pipe[2];
   int stdout_pipe[2];
+  int stderr_pipe[2];
   if (pipe(stdin_pipe) < 0)
     return false;
   if (pipe(stdout_pipe) < 0)
     return false;
+  if (pipe(stderr_pipe) < 0)
+    return false;
 
-  cgi->srv_in = stdout_pipe[0];
-  cgi->srv_out = stdin_pipe[1];
   cgi->cgi_in = stdin_pipe[0];
+  cgi->srv_out = stdin_pipe[1];
+
   cgi->cgi_out = stdout_pipe[1];
+  cgi->srv_in = stdout_pipe[0];
+
+  cgi->cgi_err = stderr_pipe[1];
+  cgi->srv_err = stderr_pipe[0];
 
 #if DEBUG >= 1
-  log_line("[CGI init] srv_in is %d.", cgi->srv_in);
-  log_line("[CGI init] srv_out is %d.", cgi->srv_out);
   log_line("[CGI init] cgi_in is %d.", cgi->cgi_in);
+  log_line("[CGI init] srv_in is %d.", cgi->srv_in);
   log_line("[CGI init] cgi_out is %d.", cgi->cgi_out);
+  log_line("[CGI init] srv_out is %d.", cgi->srv_out);
+  log_line("[CGI init] cgi_err is %d.", cgi->cgi_err);
+  log_line("[CGI init] srv_err is %d.", cgi->srv_err);
 #endif
 
-  int pid = fork();
-  if (pid < 0)
+  cgi->pid = fork();
+  if (cgi->pid < 0)
     return false;
 
   /**** child ****/
-  if (pid == 0) {
+  if (cgi->pid == 0) {
     char* argv[] = {conf->cgi, NULL};
     char** envp = envp_new(req, conf);
 
     close_pipe(&cgi->srv_in);
     close_pipe(&cgi->srv_out);
-
-    if (dup2(cgi->cgi_in, STDIN_FILENO) < 0) {
-      log_errln("[CGI dup2 stdin] %s", strerror(errno));
-      errno = 0;
-    }
-
-    if (dup2(cgi->cgi_out, STDOUT_FILENO) < 0) {
-      log_errln("[CGI dup2 stdout] %s", strerror(errno));
-      errno = 0;
-    }
-
-    // TODO stderr
+    close_pipe(&cgi->srv_err);
+    dup2(cgi->cgi_in, STDIN_FILENO);
+    dup2(cgi->cgi_out, STDOUT_FILENO);
+    dup2(cgi->cgi_err, STDERR_FILENO);
 
 #if DEBUG >= 1
     int cnt;
@@ -194,6 +198,7 @@ bool cgi_init(cgi_t* cgi, const req_t* req, const conf_t* conf) {
       errno = 0;
       close_pipe(&cgi->cgi_in);
       close_pipe(&cgi->cgi_out);
+      close_pipe(&cgi->cgi_err);
       exit(EXIT_FAILURE);
     }
 
@@ -201,18 +206,28 @@ bool cgi_init(cgi_t* cgi, const req_t* req, const conf_t* conf) {
   }
 
   /**** parent ****/
-  if (pid > 0) {
+  if (cgi->pid > 0) {
 
 #if DEBUG >= 1
-    log_line("[CGI] forked cgi %d.", pid);
+    log_line("[CGI] forked cgi %d.", cgi->pid);
     log_flush();
 #endif
 
     close_pipe(&cgi->cgi_in);
     close_pipe(&cgi->cgi_out);
+    close_pipe(&cgi->cgi_err);
     cgi->phase = CGI_SRV_TO_CGI;
   }
 
   return true;
 }
 
+void cgi_logerr(cgi_t* cgi) {
+  char err[ERRSZ+1];
+  ssize_t n = read(cgi->srv_err, err, ERRSZ);
+  if (n > 0) {
+    // TODO: handle \0 in the middle
+    err[n] = 0; // terminate the str
+    log_errln("[CGI %d] %s", cgi->pid, err);
+  }
+}
