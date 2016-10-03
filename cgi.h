@@ -13,10 +13,10 @@
 
 typedef struct {
   enum {
-    CGI_READY=1,
+    CGI_IDLE=1,
+    CGI_READY,
     CGI_SRV_TO_CGI,
     CGI_CGI_TO_SRV,
-    CGI_SRV_TO_CLI,
     CGI_DONE,
     CGI_ABORT,
     CGI_DISABLED,
@@ -28,8 +28,6 @@ typedef struct {
   enum {
     BUF_RECV=1,
     BUF_SEND,
-    BUF_DONE,
-    BUF_ABORT,
   } buf_phase;
 } cgi_t;
 

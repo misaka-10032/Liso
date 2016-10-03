@@ -8,7 +8,7 @@
 #include "cgi.h"
 #include "logging.h"
 
-#define ENVP_CNT 32
+#define ENVP_CNT 64
 #define ENVSZ 2048
 
 cgi_t* cgi_new() {
@@ -17,6 +17,7 @@ cgi_t* cgi_new() {
   cgi->srv_out = -1;
   cgi->cgi_in = -1;
   cgi->cgi_out = -1;
+  cgi_reset(cgi);
   return cgi;
 }
 
@@ -27,14 +28,14 @@ void cgi_free(cgi_t* cgi) {
 }
 
 void close_pipe(int* fd) {
-  if (*fd > 0) {
+  if (*fd >= 0) {
     close(*fd);
     *fd = -1;
   }
 }
 
 void cgi_reset(cgi_t* cgi) {
-  cgi->phase = CGI_READY;
+  cgi->phase = CGI_IDLE;
 
   close_pipe(&cgi->srv_out);
   close_pipe(&cgi->srv_in);
@@ -71,6 +72,7 @@ static void convert_key(const char* from, char* to) {
     else
       *to = *from;
   }
+  *to = 0;
 }
 
 // NOT thread safe
@@ -93,6 +95,7 @@ static char** envp_new(const req_t* req, const conf_t* conf) {
 
   // TODO: remote addr
 
+  add_entry("SERVER_NAME=%s", VERSION);
   add_entry("SERVER_SOFTWARE=%s", VERSION);
   add_entry("SERVER_PROTOCOL=%s", "HTTP/1.1");
   add_entry("HTTP_HOST=%s", req->host);
@@ -102,7 +105,9 @@ static char** envp_new(const req_t* req, const conf_t* conf) {
     add_entry("HTTPS=%s", "on");
 
   hdr_t* hdr = req->hdrs->next;
-  while (hdr) {
+  for (hdr = req->hdrs->next;
+       hdr && cnt < ENVP_CNT;
+       hdr = hdr->next) {
     if (!strcasecmp(hdr->key, "Content-Type")) {
       add_entry("CONTENT_TYPE=%s", hdr->val);
     } else {
@@ -111,7 +116,14 @@ static char** envp_new(const req_t* req, const conf_t* conf) {
     }
   }
 
-  envp[cnt++] = NULL;
+  envp[cnt] = NULL;
+
+#if DEBUG >= 2
+  int i;
+  for (i = 0; i < cnt; i++)
+    log_line("[envp_new] %s", envp[i]);
+#endif
+
   return envp;
 }
 
@@ -131,10 +143,17 @@ bool cgi_init(cgi_t* cgi, const req_t* req, const conf_t* conf) {
   if (pipe(stdout_pipe) < 0)
     return false;
 
-  cgi->cgi_in = stdin_pipe[0];
-  cgi->srv_out = stdin_pipe[1];
   cgi->srv_in = stdout_pipe[0];
+  cgi->srv_out = stdin_pipe[1];
+  cgi->cgi_in = stdin_pipe[0];
   cgi->cgi_out = stdout_pipe[1];
+
+#if DEBUG >= 1
+  log_line("[CGI init] srv_in is %d.", cgi->srv_in);
+  log_line("[CGI init] srv_out is %d.", cgi->srv_out);
+  log_line("[CGI init] cgi_in is %d.", cgi->cgi_in);
+  log_line("[CGI init] cgi_out is %d.", cgi->cgi_out);
+#endif
 
   int pid = fork();
   if (pid < 0)
@@ -147,14 +166,34 @@ bool cgi_init(cgi_t* cgi, const req_t* req, const conf_t* conf) {
 
     close_pipe(&cgi->srv_in);
     close_pipe(&cgi->srv_out);
-    dup2(cgi->cgi_in, STDIN_FILENO);
-    dup2(cgi->cgi_out, STDOUT_FILENO);
+
+    if (dup2(cgi->cgi_in, STDIN_FILENO) < 0) {
+      log_errln("[CGI dup2 stdin] %s", strerror(errno));
+      errno = 0;
+    }
+
+    if (dup2(cgi->cgi_out, STDOUT_FILENO) < 0) {
+      log_errln("[CGI dup2 stdout] %s", strerror(errno));
+      errno = 0;
+    }
+
     // TODO stderr
+
+#if DEBUG >= 1
+    int cnt;
+    for (cnt = 0; envp[cnt]; cnt++);
+    log_line("[CGI] execve, file=%s, envp_cnt=%d",
+             conf->cgi, cnt);
+    log_flush();
+#endif
 
     if (execve(conf->cgi, argv, envp) < 0) {
       log_errln("[CGI] %s", strerror(errno));
+      log_flush();
       envp_free(envp);
       errno = 0;
+      close_pipe(&cgi->cgi_in);
+      close_pipe(&cgi->cgi_out);
       exit(EXIT_FAILURE);
     }
 
@@ -163,6 +202,12 @@ bool cgi_init(cgi_t* cgi, const req_t* req, const conf_t* conf) {
 
   /**** parent ****/
   if (pid > 0) {
+
+#if DEBUG >= 1
+    log_line("[CGI] forked cgi %d.", pid);
+    log_flush();
+#endif
+
     close_pipe(&cgi->cgi_in);
     close_pipe(&cgi->cgi_out);
     cgi->phase = CGI_SRV_TO_CGI;

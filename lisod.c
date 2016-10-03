@@ -71,11 +71,10 @@ static int liso_reset_or_recycle(conn_t* conn) {
   FD_SET(conn->fd, &pool->read_set);
   FD_CLR(conn->fd, &pool->write_set);
 
-  if (conn->cgi->srv_in > 0)
+  if (conn->cgi->srv_in > 0) {
     FD_CLR(conn->cgi->srv_in, &pool->read_set);
-
-  if (conn->cgi->srv_out > 0)
-    FD_CLR(conn->cgi->srv_out, &pool->write_set);
+    close_pipe(&conn->cgi->srv_in);
+  }
 
   buf_reset(conn->buf);
   req_reset(conn->req);
@@ -118,16 +117,33 @@ static int daemonize(char* lock_file) {
   int i, lfp, pid = fork();
   char str[256] = {0};
   if (pid < 0) exit(EXIT_FAILURE);
+
+  /* parent */
   if (pid > 0) {
-    fflush(stdout);
-    fflush(stderr);
     for (i = getdtablesize(); i >= 0; i--)
       close(i);
     exit(EXIT_SUCCESS);
   }
 
+  /* child*/
   setsid();
+  pid = getpid();
 
+  signal(SIGCHLD, SIG_IGN); /* child terminate signal */
+  signal(SIGHUP, signal_handler);  /* hangup signal */
+  signal(SIGTERM, signal_handler); /* software termination signal from kill */
+
+  printf("Successfully daemonized lisod, pid %d.\n", pid);
+
+  // close stdin/out for pipe
+  close(STDIN_FILENO);
+  close(STDOUT_FILENO);
+  // TODO: stderr
+
+  open("/dev/null", O_RDONLY); /* stub stdin */
+  open("/dev/null", O_WRONLY); /* stub stdout */
+
+  umask(027);
   lfp = open(lock_file, O_RDWR|O_CREAT, 0640);
 
   if (lfp < 0) {
@@ -141,20 +157,8 @@ static int daemonize(char* lock_file) {
   }
 
   /* only first instance continues */
-  pid = getpid();
   sprintf(str, "%d\n", pid);
   write(lfp, str, strlen(str)); /* record pid to lockfile */
-
-  signal(SIGCHLD, SIG_IGN); /* child terminate signal */
-  signal(SIGHUP, signal_handler); /* hangup signal */
-  signal(SIGTERM, signal_handler); /* software termination signal from kill */
-
-  printf("Successfully daemonized lisod, pid %d.\n", pid);
-
-  i = open("/dev/null", O_RDWR);
-  dup(i); /* stdout */
-  // TODO: dup stderr?
-  umask(027);
 
   return EXIT_SUCCESS;
 }
@@ -173,13 +177,10 @@ static int prepare_error_resp(conn_t* conn, int status) {
 // called only when request is totally recv'ed
 // returns -1 if conn is cleaned up
 //          1 if normal.
-static int liso_prepare_static(conn_t* conn) {
+static int liso_prepare_static_header(conn_t* conn) {
 #if DEBUG >= 1
   log_line("[prepare_static] %d", conn->fd);
 #endif
-
-  FD_CLR(conn->fd, &pool->read_set);
-  FD_SET(conn->fd, &pool->write_set);
 
   /* Try to build response */
   if (!resp_build(conn->resp, conn->req, &conf))
@@ -203,33 +204,36 @@ static int liso_prepare_static(conn_t* conn) {
   return 1;
 }
 
+// init cgi after header is parsed
+static void liso_init_cgi(conn_t* conn) {
+  if (cgi_init(conn->cgi, conn->req, &conf)) {
+    conn->cgi->phase = CGI_SRV_TO_CGI;
+  } else {
+    conn->cgi->phase = CGI_ABORT;
+    conn->resp->phase = RESP_ABORT;
+    prepare_error_resp(conn, 500);
+  }
+}
+
 // stream request body to cgi program
-// called only when header is totally recv'ed
 // body waits to be recv'ed at this point
 // returns -1 if conn is cleaned up
 //          1 if normal.
 static int liso_stream_to_cgi(conn_t* conn) {
 
-  if (conn->cgi->phase == CGI_READY) {
-
-    if (!cgi_init(conn->cgi, conn->req, &conf)) {
-      conn->cgi->phase = CGI_ABORT;
-      conn->resp->phase = RESP_ABORT;
-      conn->resp->status = 500;
-      return prepare_error_resp(conn, conn->resp->status);
-    }
-
-    FD_SET(conn->cgi->srv_out, &pool->write_set);
-    FD_SET(conn->cgi->srv_in, &pool->read_set);
-  }
-
   ssize_t rsize = buf_end(conn->buf) - conn->buf->data_p;
+
+  // we trust cgi's not blocking
+  // TODO: do we?
   while (rsize > 0) {
     ssize_t sz = write(conn->cgi->srv_out, conn->buf->data_p, rsize);
     if (sz <= 0)
       return prepare_error_resp(conn, 500);
     rsize -= sz;
   }
+
+  // reset buffer in order to recv
+  buf_reset(conn->buf);
 
   return 1;
 }
@@ -250,6 +254,8 @@ static int liso_stream_from_cgi(conn_t* conn) {
   if (conn->buf->sz == 0)
     conn->cgi->phase = CGI_DONE;
 
+  conn->cgi->buf_phase = BUF_SEND;
+
   return 1;
 }
 
@@ -260,21 +266,21 @@ static int liso_stream_from_cgi(conn_t* conn) {
 // returns -1 if conn is cleaned up.
 //          1 if normal.
 static int liso_serve_dynamic(conn_t* conn) {
+
   buf_t* buf = conn->buf;
   ssize_t rsize = buf_end(buf) - buf->data_p;
-  ssize_t rc = send(conn->fd, buf->data_p, rsize, 0);
 
+  if (rsize == 0 && conn->cgi->phase == CGI_DONE)
+    return liso_reset_or_recycle(conn);
+
+  ssize_t rc = send(conn->fd, buf->data_p, rsize, 0);
   if (rc <= 0) {
     return cleanup(conn);
   }
 
   rsize -= rc;
-  if (rsize == 0) {
-    if (conn->cgi->buf_phase == BUF_DONE)
-      return liso_reset_or_recycle(conn);
-    else
-      conn->cgi->buf_phase = BUF_RECV;
-  }
+  if (rsize == 0)
+    conn->cgi->buf_phase = BUF_RECV;
 
   return 1;
 }
@@ -321,6 +327,7 @@ static int liso_recv(conn_t* conn) {
     errno = 0;
     return -1;
   }
+
   // update size
   conn->buf->sz += dsize;
 
@@ -371,19 +378,28 @@ static int liso_recv(conn_t* conn) {
   }
 
   if (conn->req->phase == REQ_BODY) {
-    if (conn->req->type == REQ_STATIC)
+
+    // prepare for the transitions
+    if (conn->req->type == REQ_STATIC) {
       conn->cgi->phase = CGI_DISABLED;
-    else
+    } else {
       conn->resp->phase = RESP_DISABLED;
+      if (conn->cgi->phase == CGI_IDLE)
+        conn->cgi->phase = CGI_READY;
+    }
 
     // effective data is [data_p, data+sz)
     ssize_t size = buf_end(conn->buf) - conn->buf->data_p;
     conn->req->rsize -= size;
     if (conn->req->rsize <= 0) {
       conn->req->phase = REQ_DONE;
+      // recv'ed more than required
+      conn->buf->sz += conn->req->rsize;
     }
-    // after streaming body, reset data pointer
-    buf_reset(conn->buf);
+
+    // don't care about body if it's static
+    if (conn->req->type == REQ_STATIC)
+      buf_reset(conn->buf);
   }
 
 #if DEBUG >= 2
@@ -576,11 +592,24 @@ int main(int argc, char* argv[]) {
                                 &pool->read_ready,
                                 &pool->write_ready,
                                 NULL, NULL)) == -1) {
-      log_errln("Error in select.");
+      log_errln("[select] %s", strerror(errno));
+      errno = 0;
       continue;
     }
+
 #if DEBUG >= 2
     log_line("[select] n_ready=%zu", pool->n_ready);
+    for (i = 0; i < pool->n_conns; i++) {
+      conn_t* conn = pool->conns[i];
+      if (FD_ISSET(conn->fd, &pool->read_ready))
+        log_line("[select] %d is ready to read.", conn->fd);
+      if (FD_ISSET(conn->fd, &pool->write_ready))
+        log_line("[select] %d is ready to write.", conn->fd);
+      if (conn->cgi->srv_in > 0 &&
+          FD_ISSET(conn->cgi->srv_in, &pool->read_ready))
+        log_line("[select] cgi resp %d is ready to read.",
+                 conn->cgi->srv_in);
+    }
 #endif
 
     /**** new connection ****/
@@ -635,26 +664,44 @@ int main(int argc, char* argv[]) {
 
       /* transitions */
 
-      if (conn->req->phase == REQ_DONE &&
+      if (conn->req->type == REQ_STATIC &&
+          conn->req->phase == REQ_DONE &&
           conn->resp->phase == RESP_READY) {
-        // only prepare once
-        liso_prepare_static(conn);
+        // will set phase inside; only prepare once.
+        liso_prepare_static_header(conn);
       }
 
-      if (conn->req->phase == REQ_BODY &&
-          conn->req->type == REQ_DYNAMIC) {
+      if (conn->req->type == REQ_DYNAMIC &&
+          conn->cgi->phase == CGI_READY) {
+        liso_init_cgi(conn);
+      }
+
+      // prepare for select
+      if (conn->req->phase == REQ_DONE) {
+
+        FD_CLR(conn->fd, &pool->read_set);
+
+        // static response is fast, so ready for write now
+        if (conn->req->type == REQ_STATIC)
+          FD_SET(conn->fd, &pool->write_set);
+
+        // dynamic response needs to make srv_in ready first
+        if (conn->req->type == REQ_DYNAMIC)
+          FD_SET(conn->cgi->srv_in, &pool->read_set);
+      }
+
+      if (conn->req->type == REQ_DYNAMIC &&
+          conn->cgi->phase == CGI_SRV_TO_CGI) {
+
         // assumes we can stream conn->buf->data_p
-        // to pipe very fast
+        // to cgi pipe without blocking
         liso_stream_to_cgi(conn);
-      }
 
-      if (conn->req->phase == REQ_DONE &&
-          conn->req->type == REQ_DYNAMIC) {
         // cgi stream out/in transition
-        liso_stream_to_cgi(conn);
-        close_pipe(&conn->cgi->srv_out);
-        conn->cgi->phase = CGI_CGI_TO_SRV;
-        FD_SET(conn->cgi->srv_in, &pool->read_set);
+        if (conn->req->phase == REQ_DONE) {
+          close_pipe(&conn->cgi->srv_out);
+          conn->cgi->phase = CGI_CGI_TO_SRV;
+        }
       }
 
       /* serve */
@@ -667,6 +714,11 @@ int main(int argc, char* argv[]) {
           liso_stream_from_cgi(conn);
         }
 
+        // late write ready to prevent busy waiting
+        if (FD_ISSET(conn->cgi->srv_in, &pool->read_ready) &&
+            !FD_ISSET(conn->fd, &pool->write_ready))
+          FD_SET(conn->fd, &pool->write_ready);
+
         if (FD_ISSET(conn->fd, &pool->write_ready) &&
             conn->cgi->buf_phase == BUF_SEND) {
           if (liso_serve_dynamic(conn) < 0) {
@@ -676,12 +728,12 @@ int main(int argc, char* argv[]) {
         }
       }
 
+      // both static/dynamic request can go this flow
+      // 1. serving static request
+      // 2. bad request
+      // 3. cgi error
       if (FD_ISSET(conn->fd, &pool->write_ready) &&
           conn->resp->phase != RESP_DISABLED) {
-        // serves several cases
-        // 1. serving static request
-        // 2. bad request
-        // 3. cgi error
         if (liso_serve_static(conn) < 0) {
           i -= 1;
           continue;
@@ -691,11 +743,10 @@ int main(int argc, char* argv[]) {
       /* maintain max_fd */
       max_fd = max(max_fd, conn->fd);
       max_fd = max(max_fd, conn->cgi->srv_in);
-      max_fd = max(max_fd, conn->cgi->srv_out);
     }
 
     // update max_fd
-    pool->max_fd = min(pool->max_fd, max_fd);
+    pool->max_fd = max_fd;
 #if DEBUG >= 1
     log_line("[main loop] max fd is %d", pool->max_fd);
 #endif

@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
     Flaskr
@@ -11,6 +12,7 @@
 """
 
 import os
+import sys
 from sqlite3 import dbapi2 as sqlite3
 from flask import Flask, request, session, g, redirect, url_for, abort, \
      render_template, flash
@@ -176,5 +178,13 @@ def run_with_cgi(application):
 ############### END WSGI WRAPPER ##############
 
 if __name__ == '__main__':
+    import cgitb
+    cgitb.enable()
+
+    with open('tmp', 'w') as f:
+        f.write("I'm in!\n")
+
     run_with_cgi(app)
+
+    cgi.test()
 

@@ -25,6 +25,9 @@ CLI_OBJS := $(BUILD)/$(CLI).o $(DEP_OBJS)
 TEST_OBJS := $(BUILD)/$(TEST).o $(DEP_OBJS)
 
 RUN := run
+HTTP_PORT := 10032
+HTTPS_PORT := 10443
+CGI_SCRIPT := flaskr/flaskr.py
 
 all: $(SRV) $(CLI) $(TEST)
 
@@ -35,7 +38,8 @@ pre:
 	@FLASK_APP=flaskr.flaskr flask initdb
 
 tags:
-	@ctags -R --exclude=.git --exclude=$(BUILD) --exclude=$(RUN) \
+	@ctags -R --exclude=.git                \
+		--exclude=$(BUILD) --exclude=$(RUN) \
 		--languages=C
 
 $(SRV): pre $(SRV_OBJS)
@@ -55,8 +59,9 @@ $(BUILD)/%.o: %.c
 %.c: %.h
 
 run: all
-	./$(SRV) 10032 443 $(RUN)/log $(RUN)/lock www \
-		flaskr sslkey.key sslcrt.crt
+	./$(SRV) $(HTTP_PORT) $(HTTPS_PORT) \
+		$(RUN)/log $(RUN)/lock www      \
+		$(CGI_SCRIPT) sslkey.key sslcrt.crt
 
 stop:
 	killall $(SRV)
@@ -67,7 +72,7 @@ stop:
 #		$(RUN)/cgi $(RUN)/prv $(RUN)/cert
 
 echo: all
-	./$(CLI) localhost 10032
+	./$(CLI) localhost $(HTTP_PORT)
 
 handin: all clean
 	cd .. && tar cvf longqic.tar 15-441-project-1 && cd -
@@ -82,7 +87,7 @@ test1: all
 	test/test1.sh
 
 test2: all
-	test/cp2/grader1cp2.py localhost 10032
+	test/cp2/grader1cp2.py localhost $(HTTP_PORT)
 
 test: test0 test1
 

@@ -84,6 +84,10 @@ void log_errln(char* fmt, ...) {
   unlock();
 }
 
+void log_flush() {
+  fsync(fd);
+}
+
 void log_stop() {
   if (fd > 0) {
     close(fd);
