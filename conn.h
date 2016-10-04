@@ -28,11 +28,111 @@ typedef struct {
   buf_t* buf;
 } conn_t;
 
-// Create a new connection.
-// Do not actually establish the connection.
-// But just allocate resource for it.
+/**
+ * @brief Success Callback
+ * @param conn Connection
+ * @return 1 if conn is still alive
+ *        -1 if conn is closed
+ */
+typedef int (*SuccCb)(conn_t* conn);
+
+/**
+ * @brief Error Callback
+ * @param conn Connection
+ * @param status Status Code
+ * @return 1 always
+ */
+typedef int (*ErrCb)(conn_t* conn, int status);
+
+/**
+ * @brief Fatality Callback
+ * @param conn Connection
+ * @return -1 always
+ */
+typedef int (*FatCb)(conn_t* conn);
+
+/**
+ * @brief Create a new connection
+ * @param fd File descriptor of the client socket
+ * @param idx Index in the pool
+ * @return New connection
+ */
 conn_t* cn_new(int fd, int idx);
-// Free a connection
+
+/**
+ * @brief Free a connection
+ * @param conn Connection to be freed
+ */
 void cn_free(conn_t* conn);
+
+/**
+ * @brief Recv content from client.
+ * @param conn Connection.
+ * @param err_cb Error callback.
+ * @param fat_cb Fatality callback.
+ * @return 1 if conn is alive.
+ *        -1 if conn is closed.
+ */
+int cn_recv(conn_t* conn, ErrCb err_cb, FatCb fat_cb);
+
+/**
+ * @brief Prepare static header in buffer.
+ * @param conn Connection.
+ * @param conf Global configurations.
+ * @param err_cb Error callback.
+ * @return 1 always.
+ */
+int cn_prepare_static_header(conn_t* conn, const conf_t* conf, ErrCb err_cb);
+
+/**
+ * @brief Serve static page to client.
+ * @param conn Connection.
+ * @param succ_cb Success callback.
+ * @param fat_cb Fatality callback.
+ * @return 1 if conn is alive.
+ *        -1 if conn is closed.
+ */
+int cn_serve_static(conn_t* conn, SuccCb succ_cb, FatCb fat_cb);
+
+/**
+ * @brief Init CGI.
+ * @param conn Connection.
+ * @param conf Global configurations.
+ * @param succ_cb Success callback.
+ * @param err_cb Error callback.
+ * @return 1 always.
+ */
+int cn_init_cgi(conn_t* conn, const conf_t* conf,
+                SuccCb succ_cb, ErrCb err_cb);
+
+/**
+ * @brief Stream body to CGI
+ * @param conn Connection
+ * @param err_cb Error callback
+ * @return 1 always
+ */
+int cn_stream_to_cgi(conn_t* conn, ErrCb err_cb);
+
+/**
+ * @brief Stream response from CGI
+ * @param conn Connection
+ * @param err_cb Error callback
+ * @return 1 always
+ */
+int cn_stream_from_cgi(conn_t* conn, ErrCb err_cb);
+
+/**
+ * @brief Serve dynamic content to client
+ * @param conn Connection
+ * @param succ_cb Success callback
+ * @param fat_cb Fatality callback
+ * @return 1 if conn is alive
+ *        -1 if conn is closed
+ *
+ * Assuems buf_phase to be SEND.
+ * Toggles buf_phase to be RECV if finished sending.
+ * Reset or recycle if CGI also finishes.
+ */
+int cn_serve_dynamic(conn_t* conn, SuccCb succ_cb, FatCb fat_cb);
 
 #endif // CONN_H
