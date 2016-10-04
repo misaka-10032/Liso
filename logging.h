@@ -9,7 +9,6 @@
 #ifndef LOGGING_H
 #define LOGGING_H
 
-#include "io.h"
 #include "utils.h"
 
 #define LINESZ BUFSZ

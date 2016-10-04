@@ -7,7 +7,7 @@
 #ifndef REQUEST_H
 #define REQUEST_H
 
-#include "io.h"
+#include "buffer.h"
 #include "header.h"
 #include "utils.h"
 

@@ -13,7 +13,6 @@
 #include <fcntl.h>
 #include <time.h>
 #include "response.h"
-#include "io.h"
 #include "utils.h"
 #include "logging.h"
 #include "config.h"

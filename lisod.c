@@ -21,11 +21,9 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include "daemon.h"
 #include "pool.h"
-#include "request.h"
-#include "response.h"
 #include "logging.h"
-#include "io.h"
 #include "config.h"
 #include "utils.h"
 
@@ -45,28 +43,6 @@ int close_socket(int sock) {
     return 1;
   }
   return 0;
-}
-
-// clean up the connection
-// always return -1
-static int cleanup(conn_t* conn) {
-#if DEBUG >= 1
-  log_line("[cleanup] %d.", conn->fd);
-#endif
-
-  if (pl_del_conn(pool, conn) < 0) {
-    log_errln("Error deleting connection.");
-  }
-  return -1;
-}
-
-// reset req/resp or recycle them.
-// always return 1 indicating no mistake.
-static int liso_reset_or_recycle(conn_t* conn) {
-  if (conn->resp->alive)
-    return pl_reset_conn(pool, conn);
-  else
-    return cleanup(conn);
 }
 
 // tear down the server
@@ -105,54 +81,26 @@ static void signal_handler(int sig) {
   }
 }
 
-// daemonize the process
-static int daemonize(char* lock_file) {
-  /* drop to having init() as parent */
-  int i, lfp, pid = fork();
-  char str[256] = {0};
-  if (pid < 0) exit(EXIT_FAILURE);
+// clean up the connection
+// always return -1
+static int cleanup(conn_t* conn) {
+#if DEBUG >= 1
+  log_line("[cleanup] %d.", conn->fd);
+#endif
 
-  /* parent */
-  if (pid > 0) {
-    for (i = getdtablesize(); i >= 0; i--)
-      close(i);
-    exit(EXIT_SUCCESS);
+  if (pl_del_conn(pool, conn) < 0) {
+    log_errln("Error deleting connection.");
   }
+  return -1;
+}
 
-  /* child*/
-  setsid();
-  pid = getpid();
-
-  signal(SIGCHLD, signal_handler); /* child terminate signal */
-  signal(SIGHUP, signal_handler);  /* hangup signal */
-  signal(SIGTERM, signal_handler); /* software termination signal from kill */
-
-  printf("Successfully daemonized lisod, pid %d.\n", pid);
-
-  umask(027);
-  lfp = open(lock_file, O_RDWR|O_CREAT, 0640);
-
-  if (lfp < 0) {
-    fprintf(stderr, "Cannot open lock file.\n");
-    exit(EXIT_FAILURE); /* can not open */
-  }
-
-  if (lockf(lfp, F_TLOCK, 0) < 0) {
-    fprintf(stderr, "Cannot lock the lock file.\n");
-    exit(EXIT_FAILURE); /* can not lock */
-  }
-
-  /* only first instance continues */
-  sprintf(str, "%d\n", pid);
-  write(lfp, str, strlen(str)); /* record pid to lockfile */
-
-  // close stdin/out for pipe
-  close(STDIN_FILENO);
-  close(STDOUT_FILENO);
-  open("/dev/null", O_RDONLY); /* stub stdin */
-  open("/dev/null", O_WRONLY); /* stub stdout */
-
-  return EXIT_SUCCESS;
+// reset req/resp or recycle them.
+// always return 1 indicating no mistake.
+static int liso_reset_or_recycle(conn_t* conn) {
+  if (conn->resp->alive)
+    return pl_reset_conn(pool, conn);
+  else
+    return cleanup(conn);
 }
 
 // recv error, prepare to respond error
@@ -570,10 +518,15 @@ int main(int argc, char* argv[]) {
     teardown(EXIT_FAILURE);
   }
 
-  // avoid crash when client continues to send after sock is closed.
-  signal(SIGPIPE, SIG_IGN);
   // daemonize server
   daemonize(conf.lock);
+
+  // avoid crash when client continues to send after sock is closed.
+  signal(SIGPIPE, SIG_IGN);
+  // set up signal handlers
+  signal(SIGCHLD, signal_handler); /* child terminate signal */
+  signal(SIGHUP, signal_handler);  /* hangup signal */
+  signal(SIGTERM, signal_handler); /* software termination signal from kill */
 
   /* setup log */
   log_init(conf.log);

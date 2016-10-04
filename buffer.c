@@ -1,13 +1,13 @@
 /**
- * @file io.c
- * @brief Implementation of io.h
+ * @file buffer.c
+ * @brief Implementation of buffer.h
  * @author Longqi Cai <longqic@andrew.cmu.edu>
  */
 
 #include <stdlib.h>
 #include <assert.h>
 #include <sys/mman.h>
-#include "io.h"
+#include "buffer.h"
 #include "logging.h"
 #include "utils.h"
 
@@ -35,8 +35,6 @@ ssize_t buf_rsize(buf_t* buf) {
 
 void buf_reset(buf_t* buf) {
   buf->data_p = buf->data;
-  //TODO: check if it matters
-  //*(char*) buf->data_p = 0;
   buf->sz = 0;
 }
 
@@ -66,15 +64,3 @@ void mmbuf_free(buf_t* mmbuf) {
   munmap(mmbuf->data, mmbuf->sz);
   free(mmbuf);
 }
-
-// TODO: delete
-//void sdbuf_new(buf_t* buf) {
-//  buf_t* sdbuf = malloc(sizeof(buf_t));
-//  sdbuf->sz = buf->sz;
-//  sdbuf->data = buf->data;
-//  sdbuf->data_p = buf->data_p;
-//}
-//
-//void sdbuf_free(buf_t* sdbuf) {
-//  free(sdbuf);
-//}

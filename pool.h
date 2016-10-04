@@ -12,35 +12,10 @@
 #define POOL_H
 
 #include <sys/select.h>
-#include "request.h"
-#include "response.h"
+#include "conn.h"
 #include "cgi.h"
-#include "io.h"
 
 #define MAX_CONNS (FD_SETSIZE - 10)
-
-/* conn_t */
-typedef struct {
-  // File desriptor for the client socket
-  int fd;
-  // Idx in the pool
-  int idx;
-  // Parsed request header
-  req_t* req;
-  // Response
-  resp_t* resp;
-  // CGI
-  cgi_t* cgi;
-  // Buffer for the connection
-  buf_t* buf;
-} conn_t;
-
-// Create a new connection.
-// Do not actually establish the connection.
-// But just allocate resource for it.
-conn_t* cn_new(int fd, int idx);
-// Free a connection
-void cn_free(conn_t* conn);
 
 /* pool_t */
 typedef struct {

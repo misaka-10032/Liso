@@ -8,7 +8,7 @@
 #define CGI_H
 
 #include "request.h"
-#include "io.h"
+#include "buffer.h"
 #include "config.h"
 
 typedef struct {

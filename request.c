@@ -8,7 +8,6 @@
 #include <strings.h>
 #include "request.h"
 #include "logging.h"
-#include "io.h"
 #include "utils.h"
 
 req_t* req_new() {

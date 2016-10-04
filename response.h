@@ -7,7 +7,7 @@
 #ifndef RESPONSE_H
 #define RESPONSE_H
 
-#include "io.h"
+#include "buffer.h"
 #include "request.h"
 #include "header.h"
 #include "utils.h"

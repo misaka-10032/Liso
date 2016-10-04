@@ -1,10 +1,10 @@
 /**
- * @file io.h
- * @brief Provides IO related functions.
+ * @file buffer.h
+ * @brief Provides buffering to accommodate different bandwidth.
  */
 
-#ifndef IO_H
-#define IO_H
+#ifndef BUFFER_H
+#define BUFFER_H
 
 #include <sys/types.h>
 #include <unistd.h>
@@ -41,12 +41,4 @@ buf_t* mmbuf_new(int fd, size_t sz);
 // destroy a mmbuf
 void mmbuf_free(buf_t* buf);
 
-// TODO: delete
-///* sdbuf is buf that doesn't hold data.
-//   it only holds pointers. */
-//// constructor for shadow buffer
-//buf_t* sdbuf_new(buf_t* buf);
-//// destroy a sdbuf
-//void sdbuf_free(buf_t* buf);
-
-#endif // IO_H
+#endif // BUFFER_H
