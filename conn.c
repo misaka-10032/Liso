@@ -195,16 +195,22 @@ int cn_prepare_static_header(conn_t* conn, const conf_t* conf, ErrCb err_cb) {
 }
 
 /**
- * @brief Prepare error page in buffer, including header.
+ * @brief Send error page to client.
  * @param conn Connection.
- * @return 1 always.
+ * @param succ_cb Success callback.
+ * @param fat_cb Fatality callback.
+ * @return 1 if conn is alive.
+ *        -1 if conn is closed.
  *
- * Assumes error page is small enough to fill in the buffer.
+ * Assumes error page fits into buffer.
  */
-static int cn_prepare_error_page(conn_t* conn) {
+static int cn_send_error_page(conn_t* conn, SuccCb succ_cb, FatCb fat_cb) {
+
   buf_t* buf = conn->buf;
   req_t* req = conn->req;
   resp_t* resp = conn->resp;
+
+  /**** prepare ****/
 
   // reset buf so as to put error header/body in it
   buf_reset(buf);
@@ -223,23 +229,10 @@ static int cn_prepare_error_page(conn_t* conn) {
   // fill in body
   memcpy(buf_end(buf), msg, resp->clen);
   buf->sz += resp->clen;
-  conn->resp->phase = RESP_ERROR;
 
-  return 1;
-}
+  /**** send ****/
 
-/**
- * @brief Send error page to client.
- * @param conn Connection.
- * @param succ_cb Success callback.
- * @param fat_cb Fatality callback.
- * @return 1 if conn is alive.
- *        -1 if conn is closed.
- */
-static int cn_send_error_page(conn_t* conn, SuccCb succ_cb, FatCb fat_cb) {
-  buf_t* buf = conn->buf;
   ssize_t rsize = buf_end(buf) - buf->data_p;
-
   ssize_t rc = send(conn->fd, buf->data_p, rsize, 0);
   if (rc <= 0) {
     log_errln("Error sending error msg.");
@@ -256,9 +249,6 @@ static int cn_send_error_page(conn_t* conn, SuccCb succ_cb, FatCb fat_cb) {
 int cn_serve_static(conn_t* conn, SuccCb succ_cb, FatCb fat_cb) {
 
   if (conn->resp->phase == RESP_ABORT)
-    cn_prepare_error_page(conn);
-
-  if (conn->resp->phase == RESP_ERROR)
     return cn_send_error_page(conn, succ_cb, fat_cb);
 
   if (conn->resp->phase == RESP_HEADER) {
@@ -391,4 +381,3 @@ int cn_serve_dynamic(conn_t* conn, SuccCb succ_cb, FatCb fat_cb) {
 
   return 1;
 }
-

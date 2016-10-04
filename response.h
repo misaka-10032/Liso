@@ -18,9 +18,8 @@ typedef struct resp_s {
     RESP_READY=1,
     RESP_HEADER,
     RESP_BODY,
-    RESP_ABORT,  // decide to respond error, not yet prepared
-    RESP_ERROR,  // prepared error, and in the middle of sending error
-    RESP_DISABLED,  // to serve cgi
+    RESP_ABORT,
+    RESP_DISABLED,
   } phase;
   int status;
   ssize_t clen;
