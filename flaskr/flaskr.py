@@ -13,10 +13,13 @@
 
 import os
 import sys
+
+# TODO: append proper paths
+sys.path.append('/usr/local/lib/python2.7/site-packages')
+
 from sqlite3 import dbapi2 as sqlite3
 from flask import Flask, request, session, g, redirect, url_for, abort, \
      render_template, flash
-
 
 # create our little application :)
 app = Flask(__name__)

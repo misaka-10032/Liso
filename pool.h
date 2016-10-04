@@ -67,5 +67,7 @@ void pl_ready(pool_t* p);
 int pl_add_conn(pool_t* p, conn_t* c);
 // Delete and free the connection from the pool.
 int pl_del_conn(pool_t* p, conn_t* c);
+// Reset a conn in the pool
+int pl_reset_conn(pool_t* p, conn_t* c);
 
 #endif // POOL_H

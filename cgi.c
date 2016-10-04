@@ -18,6 +18,8 @@ cgi_t* cgi_new() {
   cgi->srv_out = -1;
   cgi->cgi_in = -1;
   cgi->cgi_out = -1;
+  cgi->srv_err = -1;
+  cgi->cgi_err = -1;
   cgi_reset(cgi);
   return cgi;
 }

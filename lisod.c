@@ -53,9 +53,7 @@ static int cleanup(conn_t* conn) {
 #if DEBUG >= 1
   log_line("[cleanup] %d.", conn->fd);
 #endif
-  int yes = 1;
-  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
-  close_socket(conn->fd);
+
   if (pl_del_conn(pool, conn) < 0) {
     log_errln("Error deleting connection.");
   }
@@ -65,33 +63,18 @@ static int cleanup(conn_t* conn) {
 // reset req/resp or recycle them.
 // always return 1 indicating no mistake.
 static int liso_reset_or_recycle(conn_t* conn) {
-  if (!conn->resp->alive) {
+  if (conn->resp->alive)
+    return pl_reset_conn(pool, conn);
+  else
     return cleanup(conn);
-  }
-
-  FD_SET(conn->fd, &pool->read_set);
-  FD_CLR(conn->fd, &pool->write_set);
-
-  if (conn->cgi->srv_in >= 0) {
-    FD_CLR(conn->cgi->srv_in, &pool->read_set);
-    close_pipe(&conn->cgi->srv_in);
-  }
-
-  if (conn->cgi->srv_err >= 0) {
-    FD_CLR(conn->cgi->srv_err, &pool->read_set);
-    close_pipe(&conn->cgi->srv_err);
-  }
-
-  buf_reset(conn->buf);
-  req_reset(conn->req);
-  resp_reset(conn->resp);
-  cgi_reset(conn->cgi);
-
-  return 1;
 }
 
 // tear down the server
 static int teardown(int rc) {
+  // allow port reuse
+  int yes = 1;
+  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+
   close_socket(sock);
   pl_free(pool);
   if (log_inited()) {
