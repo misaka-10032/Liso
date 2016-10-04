@@ -27,7 +27,8 @@ TEST_OBJS := $(BUILD)/$(TEST).o $(DEP_OBJS)
 RUN := run
 HTTP_PORT := 10032
 HTTPS_PORT := 10443
-CGI_SCRIPT := flaskr/flaskr.py
+#CGI_SCRIPT := flaskr/flaskr.py
+CGI_SCRIPT := flaskr/cgi_simple.py
 
 all: $(SRV) $(CLI) $(TEST)
 

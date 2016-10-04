@@ -11,6 +11,7 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <signal.h>
+#include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/select.h>
 #include <fcntl.h>
@@ -104,7 +105,12 @@ static int teardown(int rc) {
 }
 
 static void signal_handler(int sig) {
+  int status;
   switch (sig) {
+    case SIGCHLD:
+      /* reap child to prevent zombie */
+      while ((waitpid(-1, &status, WNOHANG|WUNTRACED)) > 0);
+      break;
     case SIGHUP:
       /* rehash the server */
       break;
@@ -134,7 +140,7 @@ static int daemonize(char* lock_file) {
   setsid();
   pid = getpid();
 
-  signal(SIGCHLD, SIG_IGN); /* child terminate signal */
+  signal(SIGCHLD, signal_handler); /* child terminate signal */
   signal(SIGHUP, signal_handler);  /* hangup signal */
   signal(SIGTERM, signal_handler); /* software termination signal from kill */
 

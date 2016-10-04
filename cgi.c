@@ -222,8 +222,9 @@ bool cgi_init(cgi_t* cgi, const req_t* req, const conf_t* conf) {
   return true;
 }
 
+// NOT thread safe
 void cgi_logerr(cgi_t* cgi) {
-  char err[ERRSZ+1];
+  static char err[ERRSZ+1];
   ssize_t n = read(cgi->srv_err, err, ERRSZ);
   if (n > 0) {
     // TODO: handle \0 in the middle
