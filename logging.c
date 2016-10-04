@@ -84,6 +84,13 @@ void log_errln(char* fmt, ...) {
   unlock();
 }
 
+void log_raw(void* data, size_t n) {
+  lock();
+  write(fd, data, n);
+  write(fd, "\n", 1);
+  unlock();
+}
+
 void log_flush() {
   fsync(fd);
 }

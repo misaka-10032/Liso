@@ -32,6 +32,7 @@ void test_strstartswith() {
   assert(strstartswith("abc", "a"));
   assert(!strstartswith("b", "bc"));
   assert(!strstartswith("bc", "cd"));
+  assert(strstartswith("abc", "abc"));
 }
 
 int main() {

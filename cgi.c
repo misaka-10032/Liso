@@ -8,6 +8,7 @@
 #include "cgi.h"
 #include "logging.h"
 
+#define PREFIX "/cgi"
 #define ENVP_CNT 64
 #define ENVSZ 2048
 #define ERRSZ 2048
@@ -89,6 +90,7 @@ static char** envp_new(const req_t* req, const conf_t* conf) {
   int sz;
 
   add_entry("GATEWAY_INTERFACE=%s", "CGI/1.1");
+  add_entry("PATH_INFO=%s", req->uri+strlen(PREFIX));
   add_entry("REQUEST_URI=%s", req->uri);
   add_entry("REQUEST_METHOD=%s", req_method(req));
 
@@ -96,7 +98,7 @@ static char** envp_new(const req_t* req, const conf_t* conf) {
     add_entry("QUERY_STRING=%s", req->params);
 
   if (req->clen > 0)
-    add_entry("Content-Length=%zd", req->clen);
+    add_entry("CONTENT_LENGTH=%zd", req->clen);
 
   // TODO: remote addr
 
@@ -104,7 +106,7 @@ static char** envp_new(const req_t* req, const conf_t* conf) {
   add_entry("SERVER_SOFTWARE=%s", VERSION);
   add_entry("SERVER_PROTOCOL=%s", "HTTP/1.1");
   add_entry("HTTP_HOST=%s", req->host);
-  add_entry("SCRIPT_NAME=%s", conf->cgi);
+  add_entry("SCRIPT_NAME=%s", PREFIX);
 
   if (req->scheme == HTTPS)
     add_entry("HTTPS=%s", "on");
@@ -227,10 +229,10 @@ bool cgi_init(cgi_t* cgi, const req_t* req, const conf_t* conf) {
 // NOT thread safe
 void cgi_logerr(cgi_t* cgi) {
   static char err[ERRSZ+1];
+  // it may NOT be terminated with \0
   ssize_t n = read(cgi->srv_err, err, ERRSZ);
   if (n > 0) {
-    // TODO: handle \0 in the middle
-    err[n] = 0; // terminate the str
-    log_errln("[CGI %d] %s", cgi->pid, err);
+    log_errln("[CGI %d]", cgi->pid);
+    log_raw(err, n);
   }
 }

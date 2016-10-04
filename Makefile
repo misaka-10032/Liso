@@ -25,7 +25,7 @@ CLI_OBJS := $(BUILD)/$(CLI).o $(DEP_OBJS)
 TEST_OBJS := $(BUILD)/$(TEST).o $(DEP_OBJS)
 
 RUN := run
-HTTP_PORT := 10032
+HTTP_PORT := 10031
 HTTPS_PORT := 10443
 CGI_SCRIPT := flaskr/flaskr.py
 #CGI_SCRIPT := flaskr/cgi_simple.py
@@ -89,8 +89,6 @@ test1: all
 
 test2: all
 	test/cp2/grader1cp2.py localhost $(HTTP_PORT)
-
-test: test0 test1
 
 clean:
 	@rm -rf $(BUILD) $(RUN)/log www $(SRV) $(CLI) $(TEST) \

@@ -124,9 +124,9 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
 
     char* host_start = NULL;
     char* host_end = NULL;
-    if (strcasecmp(req->uri, "http://"))
+    if (!strcasecmp(req->uri, "http://"))
       host_start = req->uri + 8;
-    else if (strcasecmp(req->uri, "https://"))
+    else if (!strcasecmp(req->uri, "https://"))
       host_start = req->uri + 9;
     if (host_start)
       host_end = strchr(host_start, '/');
@@ -134,6 +134,10 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
       strncpy0(req->host, host_start, host_end-host_start);
       strcpy0(req->uri, host_end);
     }
+
+#if DEBUG >= 2
+    log_line("[req_parse] Processed uri: %s", req->uri);
+#endif
 
     // check cgi
     if (strstartswith(req->uri, "/cgi/"))

@@ -181,13 +181,5 @@ def run_with_cgi(application):
 ############### END WSGI WRAPPER ##############
 
 if __name__ == '__main__':
-    import cgitb
-    cgitb.enable()
-
-    with open('tmp', 'w') as f:
-        f.write("I'm in!\n")
-
     run_with_cgi(app)
-
-    cgi.test()
 

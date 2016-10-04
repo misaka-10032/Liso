@@ -223,6 +223,11 @@ static int liso_stream_to_cgi(conn_t* conn) {
     if (sz <= 0)
       return prepare_error_resp(conn, 500);
     rsize -= sz;
+
+#if DEBUG >= 2
+    log_line("[stream to cgi]");
+    log_raw(conn->buf->data_p, sz);
+#endif
   }
 
   // reset buffer in order to recv
@@ -606,6 +611,7 @@ int main(int argc, char* argv[]) {
 #endif
 
     /**** new connection ****/
+
     if (FD_ISSET(sock, &pool->read_ready)) {
       cli_size = sizeof(cli_addr);
       if ((client_sock = accept(sock, (struct sockaddr *) &cli_addr,

@@ -22,6 +22,8 @@ bool log_inited();
 void log_line(char* fmt, ...);
 // log an error line
 void log_errln(char* fmt, ...);
+// log raw content
+void log_raw(void* data, size_t n);
 // flush log
 void log_flush();
 // stop logging
