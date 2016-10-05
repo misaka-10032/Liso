@@ -242,7 +242,6 @@ static int liso_drop_conn(conn_t* conn) {
 // return 1 if conn is reset.
 //       -1 if conn is recycled.
 static int liso_reset_or_recycle(conn_t* conn) {
-  // TODO: cgi alive?
   if (conn->req->alive)
     return pl_reset_conn(pool, conn);
   else
@@ -407,13 +406,6 @@ int main(int argc, char* argv[]) {
       }
 
       /* transitions */
-
-      // TODO: don't do this
-//      if (conn->req->phase == REQ_DONE &&
-//          conn->ssl) {
-//        conn->req->alive = false;
-//        conn->resp->alive = false;
-//      }
 
       if (conn->req->type == REQ_STATIC &&
           conn->req->phase == REQ_DONE &&
