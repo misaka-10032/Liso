@@ -10,6 +10,7 @@
 CC := gcc
 CFLAGS := -Wall -Werror
 CFLAGS += -g
+LDFLAGS := -lssl -lcrypto
 
 BUILD := build
 SRV := lisod
@@ -25,12 +26,29 @@ CLI_OBJS := $(BUILD)/$(CLI).o $(DEP_OBJS)
 TEST_OBJS := $(BUILD)/$(TEST).o $(DEP_OBJS)
 
 RUN := run
-HTTP_PORT := 10031
-HTTPS_PORT := 10443
+HTTP_PORT := 20032
+HTTPS_PORT := 20443
 CGI_SCRIPT := flaskr/flaskr.py
-#CGI_SCRIPT := flaskr/cgi_simple.py
 
 all: $(SRV) $(CLI) $(TEST)
+
+%.c: %.h
+
+$(BUILD)/%.o: %.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(SRV): pre $(SRV_OBJS)
+	@echo $(SRV) $(SRV_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $(SRV_OBJS)
+
+$(CLI): pre $(CLI_OBJS)
+	@echo $(CLI) $(CLI_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $(CLI_OBJS)
+
+$(TEST): pre $(TEST_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $(TEST_OBJS)
+
+.PHONY: pre tags all clean run stop test*
 
 pre:
 	@mkdir -p $(BUILD) $(RUN)
@@ -42,22 +60,6 @@ tags:
 	@ctags -R --exclude=.git                \
 		--exclude=$(BUILD) --exclude=$(RUN) \
 		--languages=C
-
-$(SRV): pre $(SRV_OBJS)
-	@echo $(SRV) $(SRV_OBJS)
-	$(CC) $(CFLAGS) -o $@ $(SRV_OBJS)
-
-$(CLI): pre $(CLI_OBJS)
-	@echo $(CLI) $(CLI_OBJS)
-	$(CC) $(CFLAGS) -o $@ $(CLI_OBJS)
-
-$(TEST): pre $(TEST_OBJS)
-	$(CC) $(CFLAGS) -o $@ $(TEST_OBJS)
-
-$(BUILD)/%.o: %.c
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-%.c: %.h
 
 run: all
 	./$(SRV) $(HTTP_PORT) $(HTTPS_PORT) \
@@ -94,4 +96,3 @@ clean:
 	@rm -rf $(BUILD) $(RUN)/log www $(SRV) $(CLI) $(TEST) \
 		flastr/flaskr.db tags *.dSYM
 
-.PHONY: pre tags all clean run stop test*

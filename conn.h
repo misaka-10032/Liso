@@ -1,12 +1,17 @@
 /**
  * @file conn.h
- * @brief Handles connections
+ * @brief Handles connections.
  * @author Longqi Cai <longqic@andrew.cmu.edu>
+ *
+ * It coordinates between client, server, and cgi, maintaining buffer
+ * as communication channel between them. A connection can either be
+ * ssl conn or non-ssl conn, and won't change until it's destroyed.
  */
 
 #ifndef CONN_H
 #define CONN_H
 
+#include <openssl/ssl.h>
 #include "buffer.h"
 #include "request.h"
 #include "response.h"
@@ -18,14 +23,18 @@ typedef struct {
   int fd;
   // Idx in the pool
   int idx;
+  // Buffer for the connection
+  buf_t* buf;
   // Parsed request header
   req_t* req;
   // Response
   resp_t* resp;
   // CGI
   cgi_t* cgi;
-  // Buffer for the connection
-  buf_t* buf;
+  // ssl connection
+  SSL* ssl;
+  // ssl accept status
+  bool ssl_accepted;
 } conn_t;
 
 /**
@@ -64,6 +73,15 @@ conn_t* cn_new(int fd, int idx);
  * @param conn Connection to be freed
  */
 void cn_free(conn_t* conn);
+
+/**
+ * @brief Init an ssl connection.
+ * @param conn Connection.
+ * @param ctx SSL context.
+ * @return 1 if normal.
+ *        -1 if error occurs.
+ */
+int cn_init_ssl(conn_t* conn, SSL_CTX* ctx);
 
 /**
  * @brief Recv content from client.

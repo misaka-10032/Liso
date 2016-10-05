@@ -8,17 +8,21 @@
 #include "logging.h"
 #include "utils.h"
 
-pool_t* pl_new(int sock) {
+pool_t* pl_new(int sock, int ssl_sock) {
   pool_t* p = malloc(sizeof(pool_t));
   p->n_conns = 0;
-  p->conns = malloc(sizeof(conn_t*) * MAX_CONNS);
+  p->conns = malloc(sizeof(conn_t*) * (MAX_CONNS+1));
+  p->min_max_fd = max(sock, ssl_sock);
+  p->max_fd = p->min_max_fd;
 
-  p->max_fd = sock;
   FD_ZERO(&p->read_set);
   FD_ZERO(&p->write_set);
   FD_ZERO(&p->read_ready);
   FD_ZERO(&p->write_ready);
+
   FD_SET(sock, &p->read_set);
+  FD_SET(ssl_sock, &p->read_set);
+
   return p;
 }
 
@@ -40,27 +44,35 @@ void pl_free(pool_t* p) {
 }
 
 int pl_add_conn(pool_t* p, conn_t* c) {
-  if (p->n_conns >= MAX_CONNS)
+
+  if (p->n_conns >= MAX_CONNS) {
+    log_errln("[pl_add_conn] poolsz=%zu, totsz=%zu.",
+              p->n_conns, MAX_CONNS);
     return -1;
+  }
+
   FD_SET(c->fd, &p->read_set);
+
   c->idx = p->n_conns;
   p->conns[p->n_conns++] = c;
+
 #if DEBUG >= 1
-  log_line("[pl_add_conn] fd=%d, poolsz=%zu.", c->fd, p->n_conns);
+  log_line("[pl_add_conn] fd=%d, poolsz=%zu, totsz=%zu.",
+           c->fd, p->n_conns, MAX_CONNS);
 #endif
+
   return 1;
 }
 
 int pl_del_conn(pool_t* p, conn_t* c) {
 
   if (c->idx >= p->n_conns) {
-#if DEBUG >= 1
-    log_line("[pl_del_conn] c->idx=%d, p->n_conns=%zu.",
-             c->idx, p->n_conns);
-#endif
+    log_errln("[pl_del_conn] c->idx=%d, p->n_conns=%zu.",
+              c->idx, p->n_conns);
     return -1;
   }
 
+  // order matters; we want to clear all.
   pl_reset_conn(p, c);
   FD_CLR(c->fd, &p->read_set);
   close(c->fd);
@@ -75,6 +87,7 @@ int pl_del_conn(pool_t* p, conn_t* c) {
 #endif
 
   cn_free(c);
+
   return 1;
 }
 

@@ -15,4 +15,7 @@
  */
 void daemonize(char* lock_file);
 
+// release the lock file
+void release_lock();
+
 #endif // DAEMON_H

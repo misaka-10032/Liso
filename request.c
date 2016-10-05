@@ -12,6 +12,7 @@
 
 req_t* req_new() {
   req_t* req = malloc(sizeof(req_t));
+  req->scheme = HTTP;  // scheme won't change in a conn
   req->hdrs = hdr_new(NULL, NULL);
   req_reset(req);
   return req;
@@ -19,7 +20,6 @@ req_t* req_new() {
 
 void req_reset(req_t* req) {
   req->method = M_OTHER;
-  req->scheme = HTTP;
   req->uri[0] = 0;
   req->params = NULL;
   req->version[0] = 0;

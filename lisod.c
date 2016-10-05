@@ -14,24 +14,31 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/select.h>
+#include <sys/socket.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/socket.h>
 #include <unistd.h>
+#include <openssl/ssl.h>
 #include "daemon.h"
 #include "pool.h"
 #include "logging.h"
 #include "config.h"
 #include "utils.h"
 
-// global listener socket
-static int sock;
-// global connection pool
-static pool_t* pool;
-// global arguments
+// listener socket
+static int sock = -1;
+
+// ssl sock and context
+static int ssl_sock = -1;
+static SSL_CTX* ssl_ctx = NULL;
+
+// connection pool
+static pool_t* pool = NULL;
+
+// input arguments
 static const int ARG_CNT = 8;
 static conf_t conf;
 
@@ -40,11 +47,24 @@ static int teardown(int rc) {
 
   // allow port reuse
   int yes = 1;
-  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+  if (sock > 0)
+    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
+  if (ssl_sock > 0)
+    setsockopt(ssl_sock, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int));
 
-  close(sock);
+  if (sock > 0)
+    close(sock);
 
-  pl_free(pool);
+  if (ssl_sock > 0)
+    close(ssl_sock);
+
+  release_lock();
+
+  if (ssl_ctx)
+    SSL_CTX_free(ssl_ctx);
+
+  if (pool)
+    pl_free(pool);
 
   if (log_inited()) {
     log_line("-------- Liso Server stops --------");
@@ -82,8 +102,131 @@ static void signal_handler(int sig) {
   }
 }
 
+// create an ssl context
+// takes file path to private key and certificate file
+// exit on error
+// returns
+static SSL_CTX* new_ssl_ctx(const char* prv, const char* crt) {
+
+  SSL_CTX* ssl_ctx;
+  SSL_load_error_strings();
+  SSL_library_init();
+
+  if (!(ssl_ctx = SSL_CTX_new(TLSv1_server_method()))) {
+    fprintf(stderr, "[new_ssl_ctx] Error creating SSL context. "
+                    "Server NOT started.\n");
+    teardown(EXIT_FAILURE);
+  }
+
+  if (!SSL_CTX_use_PrivateKey_file(ssl_ctx, prv, SSL_FILETYPE_PEM)) {
+    fprintf(stderr, "[new_ssl_ctx] Error associating private key. "
+                    "Server NOT started.\n");
+    teardown(EXIT_FAILURE);
+  }
+
+  if (!SSL_CTX_use_certificate_file(ssl_ctx, crt, SSL_FILETYPE_PEM)) {
+    fprintf(stderr, "[new_ssl_ctx] Error associating certificate. "
+                    "Server NOT started.\n");
+    teardown(EXIT_FAILURE);
+  }
+
+  if (!SSL_CTX_check_private_key(ssl_ctx)) {
+    fprintf(stderr, "[new_ssl_ctx] Error checking private key. "
+                    "Server NOT started.\n");
+  }
+
+  return ssl_ctx;
+}
+
+// open a listener socket on port and listen on it
+// return the listener socket
+// exit on error
+static int open_listener_socket(int port) {
+
+  // create listener socket
+  int sock;
+  if ((sock = socket(PF_INET, SOCK_STREAM, 0)) < 0) {
+    fprintf(stderr, "Failed creating listener socket. "
+                    "Server not started.\n");
+    log_errln("Failed creating socket.");
+    teardown(EXIT_FAILURE);
+  }
+
+  // bind port
+  struct sockaddr_in addr;
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(port);
+  addr.sin_addr.s_addr = INADDR_ANY;
+  if (bind(sock, (struct sockaddr *) &addr, sizeof(addr))) {
+    fprintf(stderr, "Failed binding the port %d. "
+                    "Server not started.\n", port);
+    teardown(EXIT_FAILURE);
+  }
+
+  // listen on sock
+  if (listen(sock, MAX_CONNS)) {
+    fprintf(stderr, "Error listening on socket. "
+                    "Server not started.\n");
+    teardown(EXIT_FAILURE);
+  }
+
+  return sock;
+}
+
+// accept and establish a conn from sock.
+// take it as ssl conn if ctx is passed in.
+// if success, conn will be added to pool.
+// return the newly established conn.
+//        NULL if err occurs.
+static conn_t* liso_accept_conn(int sock, SSL_CTX* ctx) {
+
+  int client_sock;
+  struct sockaddr_in cli_addr;
+  socklen_t cli_size = sizeof(cli_addr);
+
+  if ((client_sock = accept(sock, (struct sockaddr*) &cli_addr,
+                            &cli_size)) < 0) {
+    log_errln("Error in accept sock: %s", strerror(errno));
+    errno = 0;
+    return NULL;
+  }
+
+  // Make client_sock non-blocking.
+  // It's possible that though server sees it's ready,
+  // but the client is then interrupted for something else.
+  // We don't want to wait the client indefinitely,
+  // so simply return EWOULDBLOCK in that case.
+  int flag = fcntl(client_sock, F_GETFL, 0);
+  fcntl(client_sock, F_SETFL, flag|O_NONBLOCK);
+
+  if (pool->n_conns == MAX_CONNS) {
+    log_errln("Max conns reached; drop client %d.", client_sock);
+    close(client_sock);
+    return NULL;
+  }
+
+  conn_t* conn = cn_new(client_sock, pool->n_conns);
+
+  if (ctx) {
+    if (cn_init_ssl(conn, ssl_ctx) < 0) {
+      if (close(client_sock) < 0) {
+        log_errln("[ssl_init] Failed to close client sock.");
+      }
+      cn_free(conn);
+      return NULL;
+    }
+  }
+
+  if (pl_add_conn(pool, conn) < 0) {
+    log_errln("Error in add conn.");
+    return NULL;
+  }
+
+  return conn;
+}
+
 // clean up the connection
-// always return -1
+// return -1 always
 static int liso_drop_conn(conn_t* conn) {
 #if DEBUG >= 1
   log_line("[liso_drop_conn] %d.", conn->fd);
@@ -99,7 +242,8 @@ static int liso_drop_conn(conn_t* conn) {
 // return 1 if conn is reset.
 //       -1 if conn is recycled.
 static int liso_reset_or_recycle(conn_t* conn) {
-  if (conn->resp->alive)
+  // TODO: cgi alive?
+  if (conn->req->alive)
     return pl_reset_conn(pool, conn);
   else
     return liso_drop_conn(conn);
@@ -122,32 +266,30 @@ static int liso_cgi_inited(conn_t* conn) {
   return 1;
 }
 
-#define liso_recv(conn)                  \
+#define liso_recv(conn)                     \
   cn_recv(conn, liso_conn_err, liso_drop_conn)
 
-#define liso_prepare_static_header(conn) \
+#define liso_prepare_static_header(conn)    \
   cn_prepare_static_header(conn, &conf, liso_conn_err)
 
-#define liso_serve_static(conn)          \
+#define liso_serve_static(conn)             \
   cn_serve_static(conn, liso_reset_or_recycle, liso_drop_conn)
 
-#define liso_init_cgi(conn)              \
+#define liso_init_cgi(conn)                 \
   cn_init_cgi(conn, &conf, liso_cgi_inited, liso_conn_err)
 
-#define liso_stream_to_cgi(conn)         \
+#define liso_stream_to_cgi(conn)            \
   cn_stream_to_cgi(conn, liso_conn_err)
 
-#define liso_stream_from_cgi(conn)       \
+#define liso_stream_from_cgi(conn)          \
   cn_stream_from_cgi(conn, liso_conn_err)
 
-#define liso_serve_dynamic(conn)         \
+#define liso_serve_dynamic(conn)            \
   cn_serve_dynamic(conn, liso_reset_or_recycle, liso_drop_conn)
+
 
 int main(int argc, char* argv[]) {
 
-  int client_sock;
-  socklen_t cli_size;
-  struct sockaddr_in addr, cli_addr;
   int i;
 
   if (argc != ARG_CNT+1) {
@@ -166,32 +308,15 @@ int main(int argc, char* argv[]) {
   conf.prv = argv[7];
   conf.crt = argv[8];
 
-  /* create listener socket */
-  if ((sock = socket(PF_INET, SOCK_STREAM, 0)) == -1) {
-    fprintf(stderr, "Failed creating listener socket. "
-                    "Server not started.\n");
-    log_errln("Failed creating socket.");
-    teardown(EXIT_FAILURE);
-  }
+  // open listener sockets
+  sock = open_listener_socket(conf.http_port);
+  ssl_sock = open_listener_socket(conf.https_port);
 
-  /* init conn pool */
-  pool = pl_new(sock);
+  // create ssl context
+  ssl_ctx = new_ssl_ctx(conf.prv, conf.crt);
 
-  /* bind port */
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(conf.http_port);
-  addr.sin_addr.s_addr = INADDR_ANY;
-  if (bind(sock, (struct sockaddr *) &addr, sizeof(addr))) {
-    fprintf(stderr, "Failed binding the port. "
-                    "Server not started.\n");
-    teardown(EXIT_FAILURE);
-  }
-
-  if (listen(sock, 5)) {
-    fprintf(stderr, "Error listening on socket. "
-                    "Server not started.\n");
-    teardown(EXIT_FAILURE);
-  }
+  // init conn pool
+  pool = pl_new(sock, ssl_sock);
 
   // daemonize server
   daemonize(conf.lock);
@@ -208,12 +333,13 @@ int main(int argc, char* argv[]) {
   log_line("-------- Liso Server starts --------");
 
   /******** main loop ********/
+
   while (1) {
 
     // get pool ready
     pl_ready(pool);
 
-    /* select those who are ready */
+    // select those who are ready
     if ((pool->n_ready = select(pool->max_fd+1,
                                 &pool->read_ready,
                                 &pool->write_ready,
@@ -241,39 +367,24 @@ int main(int argc, char* argv[]) {
     /**** new connection ****/
 
     if (FD_ISSET(sock, &pool->read_ready)) {
-      cli_size = sizeof(cli_addr);
-      if ((client_sock = accept(sock, (struct sockaddr *) &cli_addr,
-                                &cli_size)) == -1) {
-        log_errln("Error in accept: %s", strerror(errno));
-        errno = 0;
-        continue;
+      if (liso_accept_conn(sock, NULL)) {
+#if DEBUG >= 1
+        log_line("[main loop] accept conn from %d.", conf.http_port);
+#endif
       }
+    }
 
-      // Make client_sock non-blocking.
-      // It's possible that though server sees it's ready,
-      // but the client is then interrupted for something else.
-      // We don't want to wait the client indefinitely,
-      // so simply return EWOULDBLOCK in that case.
-      fcntl(client_sock, F_SETFL, O_NONBLOCK);
-
-      if (pool->n_conns == MAX_CONNS) {
-        log_errln("Max conns reached; drop client %d.", client_sock);
-        close(client_sock);
-        continue;
-      }
-
-      pool->max_fd = max(pool->max_fd, client_sock);
-      conn_t* conn = cn_new(client_sock, pool->n_conns);
-
-      if (pl_add_conn(pool, conn) < 0) {
-        log_errln("Error adding connection.");
-        continue;
+    if (FD_ISSET(ssl_sock, &pool->read_ready)) {
+      if (liso_accept_conn(ssl_sock, ssl_ctx)) {
+#if DEBUG >= 1
+        log_line("[main loop] accept conn from %d.", conf.https_port);
+#endif
       }
     }
 
     /**** serve connections ****/
 
-    int max_fd = sock;
+    int max_fd = pool->min_max_fd;
 
     for (i = 0; i < pool->n_conns; i++) {
 
@@ -296,6 +407,13 @@ int main(int argc, char* argv[]) {
       }
 
       /* transitions */
+
+      // TODO: don't do this
+//      if (conn->req->phase == REQ_DONE &&
+//          conn->ssl) {
+//        conn->req->alive = false;
+//        conn->resp->alive = false;
+//      }
 
       if (conn->req->type == REQ_STATIC &&
           conn->req->phase == REQ_DONE &&

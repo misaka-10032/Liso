@@ -11,9 +11,11 @@
 #include <sys/stat.h>
 #include "daemon.h"
 
+static int lfp = -1;
+
 void daemonize(char* lock_file) {
   /* drop to having init() as parent */
-  int i, lfp, pid = fork();
+  int i, pid = fork();
   char str[256] = {0};
   if (pid < 0) {
     fprintf(stderr, "Cannot fork daemon.\n");
@@ -55,4 +57,9 @@ void daemonize(char* lock_file) {
   close(STDOUT_FILENO);
   open("/dev/null", O_RDONLY); /* stub stdin */
   open("/dev/null", O_WRONLY); /* stub stdout */
+}
+
+void release_lock() {
+  if (lfp > 0)
+    close(lfp);
 }

@@ -23,7 +23,8 @@ typedef struct {
   size_t n_conns;
   conn_t** conns;
 
-  // info about the pool
+  // stat about conns
+  int min_max_fd;  // smallest possible of max_fd; max of two socks.
   int max_fd;
   size_t n_ready;
   fd_set read_set;
@@ -33,7 +34,7 @@ typedef struct {
 } pool_t;
 
 // Create a new pool.
-pool_t* pl_new(int sock);
+pool_t* pl_new(int sock, int ssl_sock);
 // Free a pool.
 void pl_free(pool_t* p);
 // Prepare the pool for select.

@@ -5,6 +5,7 @@
  */
 
 #include <sys/socket.h>
+#include <openssl/err.h>
 #include "conn.h"
 #include "logging.h"
 #include "utils.h"
@@ -18,10 +19,17 @@ conn_t* cn_new(int fd, int idx) {
   conn->resp = resp_new();
   conn->cgi = cgi_new();
   conn->buf = buf_new(BUFSZ);
+  // ssl status won't change once established
+  conn->ssl = NULL;
+  conn->ssl_accepted = false;
   return conn;
 }
 
 void cn_free(conn_t* conn) {
+  if (conn->ssl) {
+    SSL_shutdown(conn->ssl);
+    SSL_free(conn->ssl);
+  }
   req_free(conn->req);
   resp_free(conn->resp);
   cgi_free(conn->cgi);
@@ -29,29 +37,97 @@ void cn_free(conn_t* conn) {
   free(conn);
 }
 
+int cn_init_ssl(conn_t* conn, SSL_CTX* ctx) {
+
+  if (!(conn->ssl = SSL_new(ctx))) {
+    log_errln("[cn_init_ssl] failed to SSL_new for %d.", conn->fd);
+    return -1;
+  }
+
+  int rc;
+  if ((rc = !SSL_set_fd(conn->ssl, conn->fd))) {
+    log_errln("[cn_init_ssl] failed to SSL_set_fd for %d with rc %d. %s",
+              conn->fd, rc,
+              ERR_error_string(SSL_get_error(conn->ssl, rc), NULL));
+    SSL_free(conn->ssl);
+    conn->ssl = NULL;
+    return -1;
+  }
+
+  conn->req->scheme = HTTPS;
+
+#if DEBUG >= 1
+  log_line("[cn_init_ssl] established ssl with %d.", conn->fd);
+#endif
+  return 1;
+}
+
+static ssize_t smart_recv(SSL* ssl, int fd, void* data, size_t len) {
+  if (ssl)
+    return SSL_read(ssl, data, len);
+  else
+    return recv(fd, data, len, 0);
+}
+
+static ssize_t smart_send(SSL* ssl, int fd, void* data, size_t len) {
+  if (ssl)
+    return SSL_write(ssl, data, len);
+  else
+    return send(fd, data, len, 0);
+}
+
 /**
  * @brief Recv and ignore because of previous error
  * @param fat_cb Fatailty callback
  * @return 1 if conn is alive
  *        -1 if conn is closed
+ *
+ * It will keep recv'ng until client_sock is write ready,
+ * and we have sent the error response.
  */
 static int recv_ignore(conn_t* conn, FatCb fat_cb) {
-  // recv the rest anyway
-  ssize_t rc = recv(conn->fd, conn->buf->data, BUFSZ, 0);
-  // finally you stopped talking
-  if (rc <= 0) {
+  // recv the content anyway
+  ssize_t rc = smart_recv(conn->ssl, conn->fd, conn->buf->data, BUFSZ);
+  // finally client gives up
+  if (rc <= 0)
+    //  < 0   =>   fatal, drop
+    // == 0   =>   client closed, drop
     return fat_cb(conn);
-  } else {
+  else
     return 1;
-  }
 }
 
 int cn_recv(conn_t* conn, ErrCb err_cb, FatCb fat_cb) {
 
-  // ignore the aborted ones
-  if (conn->req->phase == REQ_ABORT) {
-    return recv_ignore(conn, fat_cb);
+  // ssl conn needs SSL_accept first
+  if (conn->ssl && !conn->ssl_accepted) {
+
+    int rc = SSL_accept(conn->ssl);
+
+    // error occurs
+    if (rc == 0) {
+      log_errln("[cn_recv] failed to SSL_accept for %d with rc %d. %s",
+                conn->fd, rc,
+                ERR_error_string(SSL_get_error(conn->ssl, rc), NULL));
+      SSL_free(conn->ssl);
+      conn->ssl = NULL;
+      return fat_cb(conn);
+
+    // client would block; continue in next iter.
+    } else if (rc < 0) {
+      return 1;
+
+    // success
+    } else {
+      conn->ssl_accepted = true;
+      return 1;
+    }
   }
+
+  // ignore the aborted ones
+  // err handling has been done before, so here we just ignore new content.
+  if (conn->req->phase == REQ_ABORT)
+    return recv_ignore(conn, fat_cb);
 
   /******** recv msg ********/
 
@@ -64,7 +140,7 @@ int cn_recv(conn_t* conn, ErrCb err_cb, FatCb fat_cb) {
   }
 
   // append to conn buf
-  ssize_t dsize = recv(conn->fd, buf_end(conn->buf), rsize, 0);
+  ssize_t dsize = smart_recv(conn->ssl, conn->fd, buf_end(conn->buf), rsize);
   if (dsize < 0) {
     conn->req->phase = REQ_ABORT;
     return fat_cb(conn);
@@ -233,7 +309,7 @@ static int cn_send_error_page(conn_t* conn, SuccCb succ_cb, FatCb fat_cb) {
   /**** send ****/
 
   ssize_t rsize = buf_end(buf) - buf->data_p;
-  ssize_t rc = send(conn->fd, buf->data_p, rsize, 0);
+  ssize_t rc = smart_send(conn->ssl, conn->fd, buf->data_p, rsize);
   if (rc <= 0) {
     log_errln("Error sending error msg.");
     return fat_cb(conn);
@@ -255,7 +331,7 @@ int cn_serve_static(conn_t* conn, SuccCb succ_cb, FatCb fat_cb) {
     buf_t* buf = conn->buf;
     ssize_t rsize = buf_end(buf) - buf->data_p;
 
-    ssize_t rc = send(conn->fd, buf->data_p, rsize, 0);
+    ssize_t rc = smart_send(conn->ssl, conn->fd, buf->data_p, rsize);
 
     if (rc <= 0) {
 #if DEBUG >= 1
@@ -284,7 +360,7 @@ int cn_serve_static(conn_t* conn, SuccCb succ_cb, FatCb fat_cb) {
     ssize_t rsize = buf_end(buf) - buf->data_p;
     ssize_t asize = min(BUFSZ, rsize);
 
-    ssize_t rc = send(conn->fd, buf->data_p, asize, 0);
+    ssize_t rc = smart_send(conn->ssl, conn->fd, buf->data_p, asize);
 
     if (rc <= 0) {
 #if DEBUG >= 1
@@ -370,7 +446,7 @@ int cn_serve_dynamic(conn_t* conn, SuccCb succ_cb, FatCb fat_cb) {
   if (rsize == 0 && conn->cgi->phase == CGI_DONE)
     return succ_cb(conn);
 
-  ssize_t rc = send(conn->fd, buf->data_p, rsize, 0);
+  ssize_t rc = smart_send(conn->ssl, conn->fd, buf->data_p, rsize);
   if (rc <= 0) {
     return fat_cb(conn);
   }
