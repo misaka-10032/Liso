@@ -26,8 +26,8 @@ CLI_OBJS := $(BUILD)/$(CLI).o $(DEP_OBJS)
 TEST_OBJS := $(BUILD)/$(TEST).o $(DEP_OBJS)
 
 RUN := run
-HTTP_PORT := 20032
-HTTPS_PORT := 20443
+HTTP_PORT := 10032
+HTTPS_PORT := 10443
 CGI_SCRIPT := flaskr/flaskr.py
 
 all: $(SRV) $(CLI) $(TEST)
@@ -92,7 +92,10 @@ test1: all
 test2: all
 	test/cp2/grader1cp2.py localhost $(HTTP_PORT)
 
+test3: all
+	cd grader && ./grader1cp3.py
+
 clean:
 	@rm -rf $(BUILD) $(RUN)/log www $(SRV) $(CLI) $(TEST) \
-		flastr/flaskr.db tags *.dSYM
+		flastr/flaskr.db tags *.dSYM lisod.lock lisod.log
 

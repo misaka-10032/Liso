@@ -1,5 +1,10 @@
 # Liso
 
+## Features
+
+* CGI
+* SSL
+
 ### Code Structure
 
 * `client`: an echo client for testing.

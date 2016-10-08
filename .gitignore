@@ -5,6 +5,9 @@
 *.pyc
 *.o
 
+*.lock
+*.log
+
 tags
 build
 tmp

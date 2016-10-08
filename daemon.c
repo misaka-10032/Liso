@@ -29,7 +29,7 @@ void daemonize(char* lock_file) {
     exit(EXIT_SUCCESS);
   }
 
-  /* child*/
+  /* child */
   setsid();
   pid = getpid();
   umask(027);
