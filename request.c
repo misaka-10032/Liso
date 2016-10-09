@@ -14,6 +14,7 @@ req_t* req_new() {
   req_t* req = malloc(sizeof(req_t));
   req->scheme = HTTP;  // scheme won't change in a conn
   req->hdrs = hdr_new(NULL, NULL);
+  req->last_buf = buf_new();
   req_reset(req);
   return req;
 }
@@ -30,10 +31,12 @@ void req_reset(req_t* req) {
   hdr_reset(req->hdrs);
   req->phase = REQ_START;
   req->type = REQ_STATIC;
+  // don't reset last_buf here
 }
 
 void req_free(req_t* req) {
   hdr_free(req->hdrs);
+  buf_free(req->last_buf);
   free(req);
 }
 

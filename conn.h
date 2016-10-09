@@ -94,6 +94,14 @@ int cn_init_ssl(conn_t* conn, SSL_CTX* ctx);
 int cn_recv(conn_t* conn, ErrCb err_cb, FatCb fat_cb);
 
 /**
+ * @brief Parse req in the buffer.
+ * @param conn Connection.
+ * @param buf_start Last end of recv in the buffer.
+ * @param err_cb Error callback.
+ */
+int cn_parse_req(conn_t* conn, void* last_recv_end, ErrCb err_cb);
+
+/**
  * @brief Prepare static header in buffer.
  * @param conn Connection.
  * @param conf Global configurations.
@@ -149,7 +157,7 @@ int cn_stream_from_cgi(conn_t* conn, ErrCb err_cb);
  *
  * Assuems buf_phase to be SEND.
  * Toggles buf_phase to be RECV if finished sending.
- * Reset or recycle if CGI also finishes.
+ * Reset or close if CGI also finishes.
  */
 int cn_serve_dynamic(conn_t* conn, SuccCb succ_cb, FatCb fat_cb);
 

@@ -63,6 +63,10 @@ typedef struct {
     REQ_ABORT,
   } phase;
 
+  // last recved content
+  // used for piped requests
+  buf_t* last_buf;
+
   // Type of request
   enum {
     REQ_STATIC=1,

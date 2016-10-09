@@ -97,6 +97,96 @@ static int recv_ignore(conn_t* conn, FatCb fat_cb) {
     return 1;
 }
 
+int cn_parse_req(conn_t* conn, void* last_recv_end, ErrCb err_cb) {
+
+  if (conn->req->phase == REQ_START ||
+      conn->req->phase == REQ_HEADER) {
+
+    void* last_parsed_end = conn->buf->data_p;
+
+    // Here we need to parse line by line.
+    // conn->buf->data_p maintains up to which line we have parsed.
+    // We need to copy as much line as possible to the local buffer.
+    // After copying, remain data_p at the next position of last \n.
+    char *p, *q = conn->buf->data_p - 1;
+    for (p = (char*) last_recv_end; p < (char*) buf_end(conn->buf); p++)
+      if (*p == '\n')
+        q = p + 1;
+
+    // There is something to parse
+    if (q > (char*) conn->buf->data_p) {
+
+      buf_t* buf_lines = buf_new();
+
+      buf_lines->sz = q - (char*) conn->buf->data_p;
+      memcpy(buf_lines->data, conn->buf->data_p, buf_lines->sz);
+      conn->buf->data_p = q;
+
+      ssize_t rc;
+      rc = req_parse(conn->req, buf_lines);
+
+      buf_free(buf_lines);
+
+      // handle bad header
+      if (rc < 0)
+        return err_cb(conn, -rc);
+      else
+        // point data_p to the end of parsed buffer
+        conn->buf->data_p = last_parsed_end + rc;
+    }
+  }
+
+  if (conn->req->phase == REQ_BODY) {
+
+    // prepare for the transitions
+    if (conn->req->type == REQ_STATIC) {
+
+      // it's static request, disable cgi.
+      conn->cgi->phase = CGI_DISABLED;
+
+    } else {
+
+      // it's dynamic request, disable resp.
+      conn->resp->phase = RESP_DISABLED;
+
+      if (conn->cgi->phase == CGI_IDLE)
+        conn->cgi->phase = CGI_READY;
+    }
+
+    // effective data is [data_p, data+sz)
+    ssize_t size = buf_end(conn->buf) - conn->buf->data_p;
+    conn->req->rsize -= size;
+    if (conn->req->rsize == 0) {
+      conn->req->phase = REQ_DONE;
+    } else if (conn->req->rsize < 0) {
+      conn->req->phase = REQ_DONE;
+      ssize_t rest_sz = -conn->req->rsize;
+
+      buf_reset(conn->req->last_buf);
+      conn->req->last_buf->sz = rest_sz;
+      memcpy(conn->req->last_buf->data, buf_end(conn->buf)-rest_sz, rest_sz);
+
+      // adjust the right size
+      conn->buf->sz -= rest_sz;
+    }
+
+    // don't care about body if it's static
+    if (conn->req->type == REQ_STATIC)
+      buf_reset(conn->buf);
+  }
+
+#if DEBUG >= 2
+  if (conn->req->phase == REQ_DONE) {
+    buf_t* dump = buf_new();
+    req_pack(conn->req, dump);
+    log_line("[cn_recv] parsed req\n%s", dump->data);
+    buf_free(dump);
+  }
+#endif
+
+  return 1;
+}
+
 int cn_recv(conn_t* conn, ErrCb err_cb, FatCb fat_cb) {
 
   // ssl conn needs SSL_accept first
@@ -140,7 +230,8 @@ int cn_recv(conn_t* conn, ErrCb err_cb, FatCb fat_cb) {
   }
 
   // append to conn buf
-  ssize_t dsize = smart_recv(conn->ssl, conn->fd, buf_end(conn->buf), rsize);
+  void* last_recv_end = buf_end(conn->buf);
+  ssize_t dsize = smart_recv(conn->ssl, conn->fd, last_recv_end, rsize);
   if (dsize < 0) {
     conn->req->phase = REQ_ABORT;
     return fat_cb(conn);
@@ -165,80 +256,8 @@ int cn_recv(conn_t* conn, ErrCb err_cb, FatCb fat_cb) {
   log_line("[cn_recv] phase is %d", conn->req->phase);
 #endif
 
-  if (conn->req->phase == REQ_START ||
-      conn->req->phase == REQ_HEADER) {
-
-    // Here we need to parse line by line.
-    // conn->buf->data_p maintains up to which line we have parsed.
-    // We need to copy as much line as possible to the local buffer.
-    // After copying, remain data_p at the next position of last \n.
-
-    char *p, *q = conn->buf->data_p - 1;
-    for (p = (char*) conn->buf->data_p; p < (char*) buf_end(conn->buf); p++)
-      if (*p == '\n')
-        q = p + 1;
-
-    // There is something to parse
-    if (q > (char*) conn->buf->data_p) {
-
-      buf_t* buf_lines = buf_new();
-
-      buf_lines->sz = q - (char*) conn->buf->data_p;
-      memcpy(buf_lines->data, conn->buf->data_p, buf_lines->sz);
-      conn->buf->data_p = q;
-
-      ssize_t rc;
-      rc = req_parse(conn->req, buf_lines);
-
-      buf_free(buf_lines);
-
-      // handle bad header
-      if (rc < 0)
-        err_cb(conn, -rc);
-    }
-  }
-
-  if (conn->req->phase == REQ_BODY) {
-
-    // prepare for the transitions
-    if (conn->req->type == REQ_STATIC) {
-
-      // it's static request, disable cgi.
-      conn->cgi->phase = CGI_DISABLED;
-
-    } else {
-
-      // it's dynamic request, disable resp.
-      conn->resp->phase = RESP_DISABLED;
-
-      if (conn->cgi->phase == CGI_IDLE)
-        conn->cgi->phase = CGI_READY;
-    }
-
-    // effective data is [data_p, data+sz)
-    ssize_t size = buf_end(conn->buf) - conn->buf->data_p;
-    conn->req->rsize -= size;
-    if (conn->req->rsize <= 0) {
-
-      conn->req->phase = REQ_DONE;
-
-      // recv'ed more than required
-      conn->buf->sz += conn->req->rsize;
-    }
-
-    // don't care about body if it's static
-    if (conn->req->type == REQ_STATIC)
-      buf_reset(conn->buf);
-  }
-
-#if DEBUG >= 2
-  if (conn->req->phase == REQ_DONE) {
-    buf_t* dump = buf_new();
-    req_pack(conn->req, dump);
-    log_line("[cn_recv] parsed req\n%s", dump->data);
-    buf_free(dump);
-  }
-#endif
+  // TODO ok to start with last_recv_end?
+  cn_parse_req(conn, last_recv_end, err_cb);
 
   return 1;
 }

@@ -238,16 +238,6 @@ static int liso_drop_conn(conn_t* conn) {
   return -1;
 }
 
-// reset req/resp or recycle them.
-// return 1 if conn is reset.
-//       -1 if conn is recycled.
-static int liso_reset_or_recycle(conn_t* conn) {
-  if (conn->req->alive)
-    return pl_reset_conn(pool, conn);
-  else
-    return liso_drop_conn(conn);
-}
-
 // mark conn as err, not fatal yet.
 // later will prepare err msg for it.
 // return 1 always
@@ -257,6 +247,36 @@ static int liso_conn_err(conn_t* conn, int status) {
   conn->resp->status = status;
   FD_SET(conn->fd, &pool->write_set);
   return 1;
+}
+
+// reset req/resp or close them.
+// return 1 if conn is reset.
+//       -1 if conn is drop.
+static int liso_reset_or_close(conn_t* conn) {
+  if (conn->req->alive) {
+
+    pl_reset_conn(pool, conn);
+
+    /* piped request */
+
+    if (conn->req->last_buf->sz) {
+      conn->buf->sz = conn->req->last_buf->sz;
+      memcpy(conn->buf->data, conn->req->last_buf->data,
+             conn->req->last_buf->sz);
+      buf_reset(conn->req->last_buf);
+      cn_parse_req(conn, conn->buf->data, liso_conn_err);
+
+      if (conn->req->phase == REQ_DONE) {
+        FD_CLR(conn->fd, &pool->read_set);
+        FD_SET(conn->fd, &pool->write_set);
+      }
+    }
+
+    return 1;
+
+  } else {
+    return liso_drop_conn(conn);
+  }
 }
 
 // prepare to recv stderr from cgi
@@ -272,7 +292,7 @@ static int liso_cgi_inited(conn_t* conn) {
   cn_prepare_static_header(conn, &conf, liso_conn_err)
 
 #define liso_serve_static(conn)             \
-  cn_serve_static(conn, liso_reset_or_recycle, liso_drop_conn)
+  cn_serve_static(conn, liso_reset_or_close, liso_drop_conn)
 
 #define liso_init_cgi(conn)                 \
   cn_init_cgi(conn, &conf, liso_cgi_inited, liso_conn_err)
@@ -284,7 +304,7 @@ static int liso_cgi_inited(conn_t* conn) {
   cn_stream_from_cgi(conn, liso_conn_err)
 
 #define liso_serve_dynamic(conn)            \
-  cn_serve_dynamic(conn, liso_reset_or_recycle, liso_drop_conn)
+  cn_serve_dynamic(conn, liso_reset_or_close, liso_drop_conn)
 
 
 int main(int argc, char* argv[]) {
@@ -390,6 +410,7 @@ int main(int argc, char* argv[]) {
       conn_t* conn = pool->conns[i];
 
       /* recv */
+
       if (FD_ISSET(conn->fd, &pool->read_ready)) {
         if (liso_recv(conn) < 0) {
           // the fatal conn is cleaned up and the last one replaces it.
