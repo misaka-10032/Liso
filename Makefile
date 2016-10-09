@@ -10,7 +10,7 @@
 CC := gcc
 CFLAGS := -Wall -Werror
 CFLAGS += -g
-LDFLAGS := -lssl -lcrypto
+LDFLAGS := -lssl -lcrypto -lpthread
 
 BUILD := build
 SRV := lisod
