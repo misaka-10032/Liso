@@ -331,14 +331,14 @@ int main(int argc, char* argv[]) {
   sock = open_listener_socket(conf.http_port);
   ssl_sock = open_listener_socket(conf.https_port);
 
+  // create ssl context
+  ssl_ctx = new_ssl_ctx(conf.prv, conf.crt);
+
   // init conn pool
   pool = pl_new(sock, ssl_sock);
 
   // daemonize server
   daemonize(conf.lock);
-
-  // create ssl context
-  ssl_ctx = new_ssl_ctx(conf.prv, conf.crt);
 
   // avoid crash when client continues to send after sock is closed.
   signal(SIGPIPE, SIG_IGN);
