@@ -25,6 +25,7 @@ CLI_OBJS := $(BUILD)/$(CLI).o $(DEP_OBJS)
 TEST_OBJS := $(BUILD)/$(TEST).o $(DEP_OBJS)
 
 RUN := run
+HOST := longqic.ddns.net
 HTTP_PORT := 10032
 HTTPS_PORT := 10443
 CGI_SCRIPT := flaskr/flaskr.py
@@ -47,13 +48,13 @@ $(CLI): pre $(CLI_OBJS)
 $(TEST): pre $(TEST_OBJS)
 	$(CC) $(LDFLAGS) -o $@ $(TEST_OBJS)
 
-.PHONY: pre tags all clean run stop test*
+.PHONY: pre tags all clean run stop test* stress
 
 pre:
 	@mkdir -p $(BUILD) $(RUN)
-	#@rm -rf www
-	#@ln -sf test/cp2/www .
-	#@FLASK_APP=flaskr.flaskr flask initdb
+	@rm -rf www
+	@ln -sf test/cp2/www .
+	@which flask && FLASK_APP=flaskr.flaskr flask initdb
 
 tags:
 	@ctags -R --exclude=.git                \
@@ -68,13 +69,16 @@ run: all
 stop:
 	killall $(SRV)
 
-# TODO: valgrind gets stuck
+# run it by hand
 #valgrind: all
-#	valgrind ./$(SRV) 10032 443 $(RUN)/log $(RUN)/lock $(RUN)/www \
-#		$(RUN)/cgi $(RUN)/prv $(RUN)/cert
+#	valgrind --leak-check=full --trace-children=yes \
+#		--log-file=run/valgrind.log \
+#		./$(SRV) $(HTTP_PORT) $(HTTPS_PORT) \
+#		$(RUN)/log $(RUN)/lock www flaskr/flaskr.py \
+#		sslkey.key sslcrt.crt
 
 echo: all
-	./$(CLI) localhost $(HTTP_PORT)
+	./$(CLI) $(HOST) $(HTTP_PORT)
 
 handin: all clean
 	cd .. && tar cvf longqic.tar 15-441-project-1 && cd -
@@ -89,10 +93,14 @@ test1: all
 	test/test1.sh
 
 test2: all
-	test/cp2/grader1cp2.py localhost $(HTTP_PORT)
+	test/cp2/grader1cp2.py $(HOST) $(HTTP_PORT)
 
 test3: all
 	cd grader && ./grader1cp3.py
+
+stress: all
+	python test/stress.py longqic.ddns.net $(HTTP_PORT) $(HTTPS_PORT) \
+		$(shell pwd)/signer.crt
 
 clean:
 	@rm -rf $(BUILD) $(RUN) www $(SRV) $(CLI) $(TEST) \

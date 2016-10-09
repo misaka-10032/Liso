@@ -4,6 +4,7 @@
 
 *.pyc
 *.o
+*.dSYM
 
 *.lock
 *.log
