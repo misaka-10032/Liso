@@ -15,7 +15,7 @@
 #include <unistd.h>
 #include <errno.h>
 
-#define DEBUG 0
+#define DEBUG 2
 
 #ifndef max
   #define max(a, b) ((a) > (b) ? (a) : (b))

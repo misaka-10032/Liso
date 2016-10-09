@@ -52,9 +52,9 @@ $(TEST): pre $(TEST_OBJS)
 
 pre:
 	@mkdir -p $(BUILD) $(RUN)
-	@rm -rf www
-	@ln -sf test/cp2/www .
-	@which flask && FLASK_APP=flaskr.flaskr flask initdb
+	#@rm -rf www
+	#@ln -sf test/cp2/www .
+	#@FLASK_APP=flaskr.flaskr flask initdb
 
 tags:
 	@ctags -R --exclude=.git                \
