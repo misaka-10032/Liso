@@ -96,6 +96,6 @@ test3: all
 	cd grader && ./grader1cp3.py
 
 clean:
-	@rm -rf $(BUILD) $(RUN)/log www $(SRV) $(CLI) $(TEST) \
+	@rm -rf $(BUILD) $(RUN) www $(SRV) $(CLI) $(TEST) \
 		flastr/flaskr.db tags *.dSYM lisod.lock lisod.log
 
