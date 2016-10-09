@@ -51,9 +51,9 @@ $(TEST): pre $(TEST_OBJS)
 
 pre:
 	@mkdir -p $(BUILD) $(RUN)
-	@rm -rf www
-	@ln -sf test/cp2/www .
-	@FLASK_APP=flaskr.flaskr flask initdb
+	#@rm -rf www
+	#@ln -sf test/cp2/www .
+	#@FLASK_APP=flaskr.flaskr flask initdb
 
 tags:
 	@ctags -R --exclude=.git                \
@@ -96,5 +96,5 @@ test3: all
 
 clean:
 	@rm -rf $(BUILD) $(RUN) www $(SRV) $(CLI) $(TEST) \
-		flastr/flaskr.db tags *.dSYM lisod.lock lisod.log
+		flaskr/flaskr.db tags *.dSYM lisod.lock lisod.log
 
