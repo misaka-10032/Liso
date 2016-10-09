@@ -17,8 +17,7 @@ SRV := lisod
 CLI := client
 TEST := test_driver
 MAIN_SRCS := ./$(SRV).c ./$(CLI).c ./$(TEST).c
-SRCS := $(shell find . -path ./test -prune -o \
-	      -maxdepth 1 -type f -name "*.c" -print)
+SRCS := $(shell find . -maxdepth 1 -name "*.c")
 DEP_SRCS := $(filter-out $(MAIN_SRCS),$(SRCS))
 DEP_OBJS := $(patsubst %.c,$(BUILD)/%.o,$(DEP_SRCS))
 SRV_OBJS := $(BUILD)/$(SRV).o $(DEP_OBJS)
