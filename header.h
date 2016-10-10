@@ -7,8 +7,8 @@
 #ifndef HEADER_H
 #define HEADER_H
 
-#define HDR_KEYSZ 64
-#define HDR_VALSZ 256
+#define HDR_KEYSZ 512
+#define HDR_VALSZ 4096
 
 /**
  * @brief Request headers as key-val pairs.
