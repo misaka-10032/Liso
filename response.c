@@ -278,6 +278,7 @@ const char* resp_title(int code) {
     case 400: return title400;
     case 404: return title404;
     case 411: return title411;
+    case 500: return title500;
     case 501: return title501;
     case 503: return title503;
     default:
@@ -291,6 +292,7 @@ const char* resp_msg(int code) {
     case 400: return msg400;
     case 404: return msg404;
     case 411: return msg411;
+    case 500: return msg500;
     case 501: return msg501;
     case 503: return msg503;
     default:

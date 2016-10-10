@@ -14,8 +14,10 @@
 
 #define LINESZ BUFSZ
 
-// init logging
-void log_init(char* fname);
+// init logging.
+// returns 1 for normal
+//        -1 for error
+int log_init(char* fname);
 // check if logging is inited
 bool log_inited();
 // log a new line

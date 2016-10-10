@@ -90,10 +90,10 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
     /* parse method */
     proceed_inline();
     char method[9];
-    log_line("[req_parse] Method size: %zd", (char*) buf->data_p-p);
     strncpy0(method, p, min(8, (char*) buf->data_p-p));
 
 #if DEBUG >= 2
+    log_line("[req_parse] Method size: %zd", (char*) buf->data_p-p);
     log_line("[req_parse] Parsed method: %s", method);
 #endif
 
@@ -252,16 +252,9 @@ ssize_t req_parse(req_t* req, buf_t* buf) {
 ssize_t req_pack(req_t* req, buf_t* buf) {
   buf->data_p = buf->data;
   *(char*) buf->data_p = 0;
+
   /* pack method */
-  switch (req->method) {
-    case M_GET:  strcpy0(buf->data_p, "GET");
-                 break;
-    case M_HEAD: strcpy0(buf->data_p, "HEAD");
-                 break;
-    case M_POST: strcpy0(buf->data_p, "POST");
-                 break;
-    default:     strcpy0(buf->data_p, "OTHER");
-  }
+  strcpy0(buf->data_p, req_method(req));
   pack_next(' ');
 
   /* pack uri */

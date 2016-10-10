@@ -9,7 +9,8 @@
 
 CC := gcc
 CFLAGS := -Wall -Werror
-CFLAGS += -g
+#CFLAGS += -g
+CFLAGS += -O3
 LDFLAGS := -lssl -lcrypto -lpthread
 
 BUILD := build
@@ -27,8 +28,8 @@ TEST_OBJS := $(BUILD)/$(TEST).o $(DEP_OBJS)
 RUN := run
 #HOST := longqic.ddns.net
 HOST := localhost
-HTTP_PORT := 20032
-HTTPS_PORT := 20443
+HTTP_PORT := 10032
+HTTPS_PORT := 10443
 CGI_SCRIPT := flaskr/flaskr.py
 
 all: $(SRV) $(CLI) $(TEST)

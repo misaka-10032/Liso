@@ -15,7 +15,6 @@
 #include "logging.h"
 
 #define DATESZ 64
-#define SEM "longqic_log"
 
 // file descriptor for the log
 static int fd = -1;
@@ -32,10 +31,19 @@ static void unlock() {
   lockf(fd, F_ULOCK, 0);
 }
 
-void log_init(char* fname) {
-  if (fd < 0) {
-    fd = open(fname, O_WRONLY|O_CREAT|O_TRUNC, 0640);
+int log_init(char* fname) {
+
+  if (fd > 0)
+    return -1;
+
+  fd = open(fname, O_WRONLY|O_CREAT|O_TRUNC, 0640);
+
+  if (lockf(fd, F_TEST, 0) < 0) {
+    fprintf(stderr, "Cannot lock %s\n", fname);
+    return -1;
   }
+
+  return 1;
 }
 
 bool log_inited() {

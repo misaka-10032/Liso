@@ -355,7 +355,8 @@ int main(int argc, char* argv[]) {
   signal(SIGTERM, signal_handler); /* software termination signal from kill */
 
   /* setup log */
-  log_init(conf.log);
+  if (log_init(conf.log) < 0)
+    teardown(EXIT_FAILURE);
   log_line("-------- Liso Server starts --------");
 
   /******** main loop ********/
