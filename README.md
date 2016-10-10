@@ -3,7 +3,7 @@
 ## Features
 
 * HTTP/1.1: GET, HEAD, POST.
-* HTTPS vis TSL
+* HTTPS via TSL
 * CGI
 
 ```
