@@ -455,10 +455,6 @@ int main(int argc, char* argv[]) {
         // static response is fast, so ready for write now
         if (conn->req->type == REQ_STATIC)
           FD_SET(conn->fd, &pool->write_set);
-
-        // dynamic response needs to make srv_in ready first
-        if (conn->req->type == REQ_DYNAMIC)
-          FD_SET(conn->cgi->srv_in, &pool->read_set);
       }
 
       if (conn->req->type == REQ_DYNAMIC &&
@@ -471,6 +467,7 @@ int main(int argc, char* argv[]) {
         // cgi stream out/in transition
         if (conn->req->phase == REQ_DONE) {
           close_pipe(&conn->cgi->srv_out);
+          FD_SET(conn->cgi->srv_in, &pool->read_set);
           conn->cgi->phase = CGI_CGI_TO_SRV;
         }
       }
@@ -480,15 +477,15 @@ int main(int argc, char* argv[]) {
       if (conn->req->type == REQ_DYNAMIC) {
 
         // stream from cgi
-        if (FD_ISSET(conn->cgi->srv_in, &pool->read_ready) &&
+        if (conn->cgi->srv_in > 0 &&
+            FD_ISSET(conn->cgi->srv_in, &pool->read_ready) &&
             conn->cgi->phase == CGI_CGI_TO_SRV &&
             conn->cgi->buf_phase == BUF_RECV) {
 
           liso_stream_from_cgi(conn);
 
           // late write ready to prevent busy waiting
-          if (FD_ISSET(conn->cgi->srv_in, &pool->read_ready) &&
-              !FD_ISSET(conn->fd, &pool->write_set)) {
+          if (conn->cgi->buf_phase == BUF_SEND) {
             FD_SET(conn->fd, &pool->write_set);
           }
 
@@ -503,6 +500,12 @@ int main(int argc, char* argv[]) {
           if (liso_serve_dynamic(conn) < 0) {
             i -= 1;
             continue;
+          }
+
+          // clear write set to prevent busy waiting
+          if (conn->cgi->buf_phase == BUF_RECV &&
+              conn->fd > 0) {
+            FD_CLR(conn->fd, &pool->write_set);
           }
         }
       }
