@@ -97,6 +97,12 @@ Shortcoming is that it refuses to `execve` CGI scripts.
 
 * Pool size check. I would manually log the connection pool size (`poolsz`), every time when it changes. I opened several browsers to view the websites, and then quite all the browsers. I would make sure `poolsz` drops to 0.
 
+### Siege test
+
+```
+make siege
+```
+
 ### Stress test
 
 ```

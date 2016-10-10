@@ -4,6 +4,7 @@
  * @author Longqi Cai <longqic@andrew.cmu.edu>
  */
 
+#include <sys/select.h>
 #include <errno.h>
 #include "cgi.h"
 #include "logging.h"
@@ -161,6 +162,11 @@ bool cgi_init(cgi_t* cgi, const req_t* req, const conf_t* conf) {
 
   cgi->cgi_err = stderr_pipe[1];
   cgi->srv_err = stderr_pipe[0];
+
+  // fd used up!
+  if (cgi->srv_in >= FD_SETSIZE ||
+      cgi->srv_err >= FD_SETSIZE)
+    return false;
 
 #if DEBUG >= 1
   log_line("[CGI init] cgi_in is %d.", cgi->cgi_in);

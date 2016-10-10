@@ -191,6 +191,12 @@ static conn_t* liso_accept_conn(int sock, SSL_CTX* ctx) {
     return NULL;
   }
 
+  if (client_sock >= FD_SETSIZE) {
+    log_errln("client_sock %d getting too large.", client_sock);
+    close(client_sock);
+    return NULL;
+  }
+
   // Make client_sock non-blocking.
   // It's possible that though server sees it's ready,
   // but the client is then interrupted for something else.
@@ -508,6 +514,17 @@ int main(int argc, char* argv[]) {
       max_fd = max(max_fd, conn->fd);
       max_fd = max(max_fd, conn->cgi->srv_in);
       max_fd = max(max_fd, conn->cgi->srv_err);
+
+      if (conn->fd >= FD_SETSIZE)
+        log_errln("conn->fd %d is getting too large!", conn->fd);
+      if (conn->cgi->srv_in >= FD_SETSIZE) {
+        log_errln("conn->cgi->srv_in %d is getting too large!",
+                  conn->cgi->srv_in);
+        log_errln("cgi phase is %d.", conn->cgi->phase);
+      }
+      if (conn->cgi->srv_err >= FD_SETSIZE)
+        log_errln("conn->cgi->srv_err %d is getting too large!",
+                  conn->cgi->srv_err);
     }
 
     // update max_fd

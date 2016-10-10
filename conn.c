@@ -336,7 +336,7 @@ static int cn_send_error_page(conn_t* conn, SuccCb succ_cb, FatCb fat_cb) {
 
   buf->data_p += rc;
   if (buf->data_p >= buf_end(buf))
-    succ_cb(conn);
+    return succ_cb(conn);
 
   return 1;
 }
@@ -397,7 +397,7 @@ int cn_serve_static(conn_t* conn, SuccCb succ_cb, FatCb fat_cb) {
 
     buf->data_p += rc;
     if (buf->data_p >= buf_end(buf))
-      succ_cb(conn);
+      return succ_cb(conn);
   }
 
   return 1;

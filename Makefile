@@ -25,9 +25,10 @@ CLI_OBJS := $(BUILD)/$(CLI).o $(DEP_OBJS)
 TEST_OBJS := $(BUILD)/$(TEST).o $(DEP_OBJS)
 
 RUN := run
-HOST := longqic.ddns.net
-HTTP_PORT := 10032
-HTTPS_PORT := 10443
+#HOST := longqic.ddns.net
+HOST := localhost
+HTTP_PORT := 20032
+HTTPS_PORT := 20443
 CGI_SCRIPT := flaskr/flaskr.py
 
 all: $(SRV) $(CLI) $(TEST)
@@ -48,7 +49,7 @@ $(CLI): pre $(CLI_OBJS)
 $(TEST): pre $(TEST_OBJS)
 	$(CC) $(LDFLAGS) -o $@ $(TEST_OBJS)
 
-.PHONY: pre tags all clean run stop test* stress
+.PHONY: pre tags all clean run stop test* stress siege
 
 pre:
 	@mkdir -p $(BUILD) $(RUN)
@@ -77,6 +78,12 @@ stop:
 #		$(RUN)/log $(RUN)/lock www flaskr/flaskr.py \
 #		sslkey.key sslcrt.crt
 
+siege-static:
+	siege -b -t30S http://$(HOST):$(HTTP_PORT)/index.html > $(RUN)/siege.log
+
+siege-dynamic:
+	siege -b -t30S http://$(HOST):$(HTTP_PORT)/cgi/ > $(RUN)/siege.log
+
 echo: all
 	./$(CLI) $(HOST) $(HTTP_PORT)
 
@@ -99,7 +106,7 @@ test3: all
 	cd grader && ./grader1cp3.py
 
 stress: all
-	python test/stress.py longqic.ddns.net $(HTTP_PORT) $(HTTPS_PORT) \
+	python test/stress.py $(HOST) $(HTTP_PORT) $(HTTPS_PORT) \
 		$(shell pwd)/signer.crt
 
 clean:
