@@ -70,10 +70,17 @@ static ssize_t smart_recv(SSL* ssl, int fd, void* data, size_t len) {
 }
 
 static ssize_t smart_send(SSL* ssl, int fd, void* data, size_t len) {
-  if (ssl)
-    return SSL_write(ssl, data, len);
-  else
-    return send(fd, data, len, 0);
+  ssize_t rc;
+  if (ssl) {
+    rc = SSL_write(ssl, data, len);
+  } else {
+    rc = send(fd, data, len, 0);
+    if (rc < 0) {
+      log_errln("[smart_send %d] %s.", fd, strerror(errno));
+      errno = 0;
+    }
+  }
+  return rc;
 }
 
 /**

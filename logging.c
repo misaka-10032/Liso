@@ -16,7 +16,7 @@
 #include "logging.h"
 
 #define DATESZ 64
-#define SEM "liso_log"
+#define SEM "longqic_log"
 
 // mutex
 static sem_t* sem;

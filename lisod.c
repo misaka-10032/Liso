@@ -486,8 +486,8 @@ int main(int argc, char* argv[]) {
 
         // late write ready to prevent busy waiting
         if (FD_ISSET(conn->cgi->srv_in, &pool->read_ready) &&
-            !FD_ISSET(conn->fd, &pool->write_ready))
-          FD_SET(conn->fd, &pool->write_ready);
+            !FD_ISSET(conn->fd, &pool->write_set))
+          FD_SET(conn->fd, &pool->write_set);
 
         if (FD_ISSET(conn->fd, &pool->write_ready) &&
             conn->cgi->buf_phase == BUF_SEND) {
