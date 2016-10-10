@@ -85,11 +85,7 @@ static void signal_handler(int sig) {
   switch (sig) {
     case SIGCHLD:
       /* reap child to prevent zombie */
-      while ((pid = waitpid(-1, &status, WNOHANG|WUNTRACED)) > 0) {
-#if DEBUG >= 1
-        log_line("[SIGCHLD] reaped %d.", pid);
-#endif
-      }
+      while ((pid = waitpid(-1, &status, WNOHANG|WUNTRACED)) > 0);
       break;
     case SIGHUP:
       /* rehash the server */
@@ -213,8 +209,13 @@ static conn_t* liso_accept_conn(int sock, SSL_CTX* ctx) {
 
   conn_t* conn = cn_new(client_sock, pool->n_conns);
 
+  // remember addr and port
+  inet_ntop(AF_INET, &(cli_addr.sin_addr),
+            conn->req->addr, INET_ADDRSTRLEN);
+  conn->req->port = ctx ? conf.https_port : conf.http_port;
+
   if (ctx) {
-    if (cn_init_ssl(conn, ssl_ctx) < 0) {
+    if (cn_init_ssl(conn, ctx) < 0) {
       if (close(client_sock) < 0) {
         log_errln("[ssl_init] Failed to close client sock.");
       }

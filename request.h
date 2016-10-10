@@ -7,6 +7,7 @@
 #ifndef REQUEST_H
 #define REQUEST_H
 
+#include <arpa/inet.h>
 #include "buffer.h"
 #include "header.h"
 #include "utils.h"
@@ -23,6 +24,11 @@
  * It will directly be piped to CGI that needs it.
  */
 typedef struct {
+
+  // client address and incoming port
+  // won't change once conn is established
+  char addr[INET_ADDRSTRLEN+1];
+  int port;
 
   // Request line
   enum {

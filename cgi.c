@@ -84,6 +84,7 @@ static void convert_key(const char* from, char* to) {
 
 // NOT thread safe
 static char** envp_new(const req_t* req, const conf_t* conf) {
+
   static char data[ENVSZ+1];
   static char key[HDR_KEYSZ+5];
   char** envp = malloc(sizeof(char*) * ENVP_CNT);
@@ -101,8 +102,9 @@ static char** envp_new(const req_t* req, const conf_t* conf) {
   if (req->clen > 0)
     add_entry("CONTENT_LENGTH=%zd", req->clen);
 
-  // TODO: remote addr
-
+  add_entry("HTTP_CONNECTION=%s", req->alive ? "Keep-alive" : "Close");
+  add_entry("REMOTE_ADDR=%s", req->addr);
+  add_entry("SERVER_PORT=%d", req->port);
   add_entry("SERVER_NAME=%s", VERSION);
   add_entry("SERVER_SOFTWARE=%s", VERSION);
   add_entry("SERVER_PROTOCOL=%s", "HTTP/1.1");

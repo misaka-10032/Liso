@@ -23,7 +23,7 @@ typedef struct {
   int fd;
   // Idx in the pool
   int idx;
-  // Buffer for the connection
+    // Buffer for the connection
   buf_t* buf;
   // Parsed request header
   req_t* req;
