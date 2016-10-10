@@ -49,12 +49,12 @@ $(CLI): pre $(CLI_OBJS)
 $(TEST): pre $(TEST_OBJS)
 	$(CC) $(LDFLAGS) -o $@ $(TEST_OBJS)
 
-.PHONY: pre tags all clean run stop test* stress siege
+.PHONY: pre tags all clean run stop test* stress siege*
 
 pre:
 	@mkdir -p $(BUILD) $(RUN)
-	#@rm -rf www
-	#@ln -sf test/cp2/www .
+	@rm -rf www
+	@ln -sf test/cp2/www .
 	#@FLASK_APP=flaskr.flaskr flask initdb
 
 tags:
@@ -79,10 +79,10 @@ stop:
 #		sslkey.key sslcrt.crt
 
 siege-static:
-	siege -b -t30S http://$(HOST):$(HTTP_PORT)/index.html > $(RUN)/siege.log
+	siege -b -t60S http://$(HOST):$(HTTP_PORT)/index.html > $(RUN)/siege.log
 
 siege-dynamic:
-	siege -b -t30S http://$(HOST):$(HTTP_PORT)/cgi/ > $(RUN)/siege.log
+	siege -b -t60S http://$(HOST):$(HTTP_PORT)/cgi/ > $(RUN)/siege.log
 
 echo: all
 	./$(CLI) $(HOST) $(HTTP_PORT)

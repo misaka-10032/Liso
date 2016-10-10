@@ -38,7 +38,7 @@ static void unlock() {
 void log_init(char* fname) {
   if (fd < 0) {
     fd = open(fname, O_WRONLY|O_CREAT|O_TRUNC, 0640);
-    sem = sem_open(SEM, O_CREAT);
+    sem = sem_open(SEM, O_CREAT, 0640, 1);
   }
 }
 

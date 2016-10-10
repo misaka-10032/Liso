@@ -27,6 +27,7 @@ app = Flask(__name__)
 # Load default config and override config from an environment variable
 app.config.update(dict(
     DATABASE=os.path.join(app.root_path, 'flaskr.db'),
+    #DATABASE='/tmp/flaskr.db',
     DEBUG=True,
     SECRET_KEY='development key',
     USERNAME='admin',
