@@ -11,5 +11,5 @@
 
 ### Checkpoint 3
 
-* [Solved] Add semaphore to lock/unlock the critical logging logic. Named semaphore is used, which is able to lock resource across process.
+* [Solved] Use `lockf` before and after logging.
 * TTL is still not supported yet.

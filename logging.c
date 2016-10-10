@@ -4,9 +4,6 @@
  * @author Longqi Cai <longqic@andrew.cmu.edu>
  */
 
-// TODO: lock
-
-//#include <semaphore.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -20,8 +17,6 @@
 #define DATESZ 64
 #define SEM "longqic_log"
 
-// mutex
-//static sem_t* sem;
 // file descriptor for the log
 static int fd = -1;
 // line buffer
@@ -29,18 +24,17 @@ static char dt[DATESZ];
 static char line[LINESZ+1];
 static char wrapped[LINESZ+DATESZ+10];
 
-//static void lock() {
-//  sem_wait(sem);
-//}
-//
-//static void unlock() {
-//  sem_post(sem);
-//}
+static void lock() {
+  lockf(fd, F_LOCK, 0);
+}
+
+static void unlock() {
+  lockf(fd, F_ULOCK, 0);
+}
 
 void log_init(char* fname) {
   if (fd < 0) {
     fd = open(fname, O_WRONLY|O_CREAT|O_TRUNC, 0640);
-//    sem = sem_open(SEM, O_CREAT, 0640, 1);
   }
 }
 
@@ -56,7 +50,7 @@ void prepare_datetime(char* datetime) {
 
 void log_line(char* fmt, ...) {
 
-//  lock();
+  lock();
 
   va_list args;
   va_start(args, fmt);
@@ -67,12 +61,12 @@ void log_line(char* fmt, ...) {
   sprintf(wrapped, "%s - %s\n", dt, line);
   write(fd, wrapped, strlen(wrapped));
 
-//  unlock();
+  unlock();
 }
 
 void log_errln(char* fmt, ...) {
 
-//  lock();
+  lock();
 
   va_list args;
   va_start(args, fmt);
@@ -83,14 +77,14 @@ void log_errln(char* fmt, ...) {
   sprintf(wrapped, "%s !!! ERROR !!! %s\n", dt, line);
   write(fd, wrapped, strlen(wrapped));
 
-//  unlock();
+  unlock();
 }
 
 void log_raw(void* data, size_t n) {
-//  lock();
+  lock();
   write(fd, data, n);
   write(fd, "\n", 1);
-//  unlock();
+  unlock();
 }
 
 void log_flush() {
@@ -100,6 +94,5 @@ void log_flush() {
 void log_stop() {
   if (fd > 0) {
     close(fd);
-//    sem_unlink(SEM);
   }
 }
