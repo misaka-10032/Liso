@@ -4,6 +4,7 @@
  * @author Longqi Cai <longqic@andrew.cmu.edu>
  */
 
+#include <fcntl.h>
 #include <sys/select.h>
 #include <errno.h>
 #include "cgi.h"
@@ -229,6 +230,13 @@ bool cgi_init(cgi_t* cgi, const req_t* req, const conf_t* conf) {
     close_pipe(&cgi->cgi_out);
     close_pipe(&cgi->cgi_err);
     cgi->phase = CGI_SRV_TO_CGI;
+
+    // set cgi pipe as non-blocking
+    int flag;
+    flag = fcntl(cgi->srv_in, F_GETFL, 0);
+    fcntl(cgi->srv_in, F_SETFL, flag|O_NONBLOCK);
+    flag = fcntl(cgi->srv_err, F_GETFL, 0);
+    fcntl(cgi->srv_err, F_SETFL, flag|O_NONBLOCK);
   }
 
   return true;

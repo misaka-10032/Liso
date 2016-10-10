@@ -477,18 +477,26 @@ int main(int argc, char* argv[]) {
 
       /* serve */
 
-      if (conn->req->type == REQ_DYNAMIC &&
-          conn->cgi->phase == CGI_CGI_TO_SRV) {
+      if (conn->req->type == REQ_DYNAMIC) {
 
+        // stream from cgi
         if (FD_ISSET(conn->cgi->srv_in, &pool->read_ready) &&
+            conn->cgi->phase == CGI_CGI_TO_SRV &&
             conn->cgi->buf_phase == BUF_RECV) {
-          liso_stream_from_cgi(conn);
-        }
 
-        // late write ready to prevent busy waiting
-        if (FD_ISSET(conn->cgi->srv_in, &pool->read_ready) &&
-            !FD_ISSET(conn->fd, &pool->write_set))
-          FD_SET(conn->fd, &pool->write_set);
+          liso_stream_from_cgi(conn);
+
+          // late write ready to prevent busy waiting
+          if (FD_ISSET(conn->cgi->srv_in, &pool->read_ready) &&
+              !FD_ISSET(conn->fd, &pool->write_set)) {
+            FD_SET(conn->fd, &pool->write_set);
+          }
+
+          if (conn->cgi->phase == CGI_DONE) {
+            FD_CLR(conn->cgi->srv_in, &pool->read_set);
+            close_pipe(&conn->cgi->srv_in);
+          }
+        }
 
         if (FD_ISSET(conn->fd, &pool->write_ready) &&
             conn->cgi->buf_phase == BUF_SEND) {
